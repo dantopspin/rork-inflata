@@ -101,7 +101,7 @@ export const ItemSpikeCard = forwardRef<View, { stat: ItemStat; sinceLabel: stri
         </Text>
 
         <View style={styles.sparkBox}>
-          <Sparkline prices={stat.history.map((h) => h.price)} height={56} />
+          <Sparkline prices={stat.history.map((h) => h.price)} height={56} strokeWidth={3} />
           <Text style={styles.sparkLabel}>
             {fmtUSD(stat.firstPrice)} → {fmtUSD(stat.currentPrice)}
           </Text>
@@ -121,11 +121,12 @@ export const ItemSpikeCard = forwardRef<View, { stat: ItemStat; sinceLabel: stri
 const styles = StyleSheet.create({
   card: {
     width: 340,
-    backgroundColor: Colors.surface,
+    backgroundColor: "#F9F9F7",
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 24,
+    transform: [{ rotate: "-1deg" }],
   },
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   wordmark: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.foreground },
@@ -156,22 +157,22 @@ const styles = StyleSheet.create({
   },
   hosRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   hosRankCol: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: Colors.foreground,
     alignItems: "center",
     justifyContent: "center",
   },
   hosRankNum: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
+    fontSize: 18,
     color: Colors.background,
-    lineHeight: 12,
+    lineHeight: 20,
   },
   hosName: { flex: 1, fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
   hosStatGroup: { alignItems: "flex-end", gap: 2 },
-  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.accent },
+  hosPct: { fontFamily: Fonts.extrabold, fontSize: 18, color: Colors.accent },
   hosDollar: { fontFamily: Fonts.mono, fontSize: 10, color: Colors.mutedForeground },
   hosFooter: { marginTop: 20, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   miLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.5, color: Colors.mutedForeground },
