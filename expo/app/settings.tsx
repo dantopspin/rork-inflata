@@ -5,6 +5,7 @@ import * as Sharing from "expo-sharing";
 import {
   Bell,
   Check,
+  ChevronLeft,
   ChevronRight,
   Download,
   Lock,
@@ -12,7 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react-native";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Platform,
@@ -32,7 +33,7 @@ import { cancelAllScheduled, requestNotificationPermission } from "@/lib/notific
 import { useApp } from "@/providers/AppProvider";
 import { Frequency } from "@/types";
 
-const APP_NAME = "ReceiptRage";
+const APP_NAME = "INFLATA";
 const APP_VERSION = "1.0";
 
 const FREQ_LABELS: Record<Frequency, string> = {
@@ -123,17 +124,30 @@ export default function Settings() {
 
   return (
     <View style={styles.screen}>
+      {/* Navigation Bar */}
+      <View style={[styles.navBar, { paddingTop: insets.top }]}>
+        <Pressable
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.selectionAsync();
+            router.back();
+          }}
+          hitSlop={12}
+          accessibilityLabel="Go back"
+        >
+          <ChevronLeft size={24} color={Colors.foreground} />
+        </Pressable>
+        <Text style={styles.navTitle}>Settings</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 24,
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: insets.bottom + 120,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.kicker}>SETTINGS</Text>
-        <Text style={styles.title}>Settings</Text>
-
         {/* ── PLAN ── */}
         <Section title={`PLAN  ·  ${planLabel.toUpperCase()}`}>
           {subscribed ? (
@@ -286,11 +300,19 @@ export default function Settings() {
 // ─────────────────────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const kids = React.Children.toArray(children).filter(Boolean);
   return (
     <View style={{ marginTop: 36 }}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.sectionDivider} />
-      <View style={{ gap: 8 }}>{children}</View>
+      <View style={styles.sectionGroup}>
+        {kids.map((child, i) => (
+          <View key={i}>
+            {child}
+            {i < kids.length - 1 && <View style={styles.rowDivider} />}
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -445,7 +467,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1.5,
     color: Colors.mutedForeground,
-    marginBottom: 10,
+    marginBottom: 6,
   },
   sectionDivider: {
     height: 1,
@@ -456,16 +478,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
+    gap: 16,
     padding: 16,
   },
-  rowDestructive: {
-    borderColor: "rgba(230,53,53,0.2)",
-  },
+  rowDestructive: {},
   rowLabel: {
     fontFamily: Fonts.bold,
     fontSize: 14,
@@ -482,11 +498,7 @@ const styles = StyleSheet.create({
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
+    gap: 16,
     padding: 16,
   },
 
@@ -498,10 +510,7 @@ const styles = StyleSheet.create({
   },
 
   confirmBox: {
-    borderWidth: 1,
-    borderColor: "rgba(230,53,53,0.3)",
     backgroundColor: "rgba(230,53,53,0.05)",
-    borderRadius: Radius.md,
     padding: 16,
   },
   confirmTitle: {
@@ -541,6 +550,35 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: 11,
     letterSpacing: 0.5,
+    color: Colors.foreground,
+  },
+
+  sectionGroup: {
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden",
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+
+  navBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  navTitle: {
+    fontFamily: Fonts.bold,
+    fontSize: 17,
+    letterSpacing: -0.3,
     color: Colors.foreground,
   },
 
