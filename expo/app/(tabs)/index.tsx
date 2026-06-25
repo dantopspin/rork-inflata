@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Settings, Share2, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Settings, Share2, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
@@ -182,6 +182,7 @@ export default function Dashboard() {
                 const isBuyAt = item.action === "buy_at";
                 const isWait = item.action === "wait";
                 const isStockUp = item.action === "stock_up";
+                const isSubstitution = item.action === "substitution_suggested";
 
                 return (
                   <Pressable
@@ -189,7 +190,7 @@ export default function Dashboard() {
                     onPress={() => router.push(`/item/${item.key}`)}
                     style={({ pressed }) => [styles.strategyRow, pressed && { backgroundColor: Colors.muted }]}
                     accessibilityRole="button"
-                    accessibilityLabel={`${item.name}: ${isBuyAt ? `Buy at ${item.store}` : isWait ? "Wait for drop" : isStockUp ? `Stock up at ${item.store}` : "Buy as planned"}`}
+                    accessibilityLabel={`${item.name}: ${isBuyAt ? `Buy at ${item.store}` : isWait ? "Wait for drop" : isStockUp ? `Stock up at ${item.store}` : isSubstitution ? "Consider swapping to a cheaper alternative" : "Buy as planned"}`}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.strategyName}>{item.name}</Text>
@@ -214,6 +215,11 @@ export default function Dashboard() {
                           <TrendingDown size={11} color={Colors.foreground} strokeWidth={2.5} />
                           <Text style={styles.strategyActionText}>STOCK UP</Text>
                           <Text style={styles.strategyActionStore}>{item.store.toUpperCase()}</Text>
+                        </>
+                      ) : isSubstitution ? (
+                        <>
+                          <Shuffle size={11} color={Colors.accent} strokeWidth={2.5} />
+                          <Text style={[styles.strategyActionText, { color: Colors.accent }]}>SWITCH IT UP</Text>
                         </>
                       ) : (
                         <Text style={[styles.strategyActionText, { color: Colors.mutedForeground }]}>AS PLANNED</Text>

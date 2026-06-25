@@ -69,6 +69,15 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       }
     }
 
+    // Standard deviation of price (volatility)
+    const mean = entries.reduce((sum, e) => sum + e.price, 0) / entries.length;
+    const variance = entries.reduce((sum, e) => sum + (e.price - mean) ** 2, 0) / entries.length;
+    const volatility = Math.sqrt(variance);
+
+    // Days since this item was last seen
+    const lastDate = new Date(last.date).getTime();
+    const lastSeenDays = (Date.now() - lastDate) / (1000 * 60 * 60 * 24);
+
     stats.push({
       key,
       name: last.name,
@@ -86,6 +95,8 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       biggestJumpPct,
       cheapestPrice: cheapestPrice < Infinity ? cheapestPrice : undefined,
       cheapestStore: cheapestStore || undefined,
+      volatility,
+      lastSeenDays,
       history: entries.map((e) => ({
         date: e.date,
         price: e.price,
@@ -222,11 +233,13 @@ export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStr
     })
     .slice(0, 3)
     .map((s): TripStrategyItem => {
-      const vol = Math.abs(s.pctChange);
       let action: TripStrategyItem["action"] = "as_planned";
       let store = "";
 
-      if (s.pctChange > 5) {
+      if (s.pctChange > 20) {
+        // Extreme spike — suggest switching to an alternative product
+        action = "substitution_suggested";
+      } else if (s.pctChange > 5) {
         if (s.cheapestStore && s.cheapestPrice != null && s.cheapestPrice < s.currentPrice) {
           action = "buy_at";
           store = s.cheapestStore;
@@ -238,7 +251,7 @@ export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStr
         store = s.history[s.history.length - 1]?.store ?? "";
       }
 
-      return { key: s.key, name: s.name, pctChange: s.pctChange, action, store, volatility: vol };
+      return { key: s.key, name: s.name, pctChange: s.pctChange, action, store, volatility: s.volatility };
     });
 }
 

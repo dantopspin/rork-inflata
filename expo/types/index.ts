@@ -5,6 +5,7 @@ export type ScanItem = {
   name: string; // canonical display name
   rawName: string; // OCR raw
   price: number;
+  originalStoreName?: string; // store this item was scanned at
 };
 
 export type Scan = {
@@ -39,6 +40,8 @@ export type ItemStat = {
   biggestJumpPct?: number;
   cheapestPrice?: number;
   cheapestStore?: string;
+  volatility: number; // standard deviation of price across all scans
+  lastSeenDays: number; // days since this item was last scanned
   history: { date: string; price: number; fromBaseline: boolean; store: string }[];
 };
 
@@ -46,7 +49,7 @@ export type TripStrategyItem = {
   key: string;
   name: string;
   pctChange: number;
-  action: "buy_at" | "wait" | "stock_up" | "as_planned";
+  action: "buy_at" | "wait" | "stock_up" | "as_planned" | "substitution_suggested";
   store: string;
   volatility: number;
 };

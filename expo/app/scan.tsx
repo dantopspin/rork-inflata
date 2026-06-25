@@ -173,12 +173,14 @@ export default function ScanScreen() {
   };
 
   const save = () => {
+    const scanStore = store.trim() || "Unknown store";
     const cleaned = items
       .map((i) => ({
         rawName: i.rawName,
         name: i.name.trim(),
         price: Number.parseFloat(i.priceStr),
         itemKey: i.itemKey,
+        originalStoreName: scanStore,
       }))
       .filter((i) => i.name && Number.isFinite(i.price) && i.price > 0);
 
@@ -196,7 +198,7 @@ export default function ScanScreen() {
     const scan: Scan = {
       id: uuid(),
       date: new Date().toISOString(),
-      store: store.trim() || "Unknown store",
+      store: scanStore,
       items: cleaned,
       source: "scan",
     };
