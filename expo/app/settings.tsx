@@ -143,13 +143,13 @@ export default function Settings() {
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 24,
-          paddingTop: 12,
+          paddingTop: 20,
           paddingBottom: insets.bottom + 120,
         }}
         showsVerticalScrollIndicator={false}
       >
         {/* ── PLAN ── */}
-        <Section title={`PLAN  ·  ${planLabel.toUpperCase()}`}>
+        <Section title={`PLAN  ·  ${planLabel.toUpperCase()}`} isFirst>
           {subscribed ? (
             <>
               {confirmCancel ? (
@@ -299,10 +299,10 @@ export default function Settings() {
 // Sub-components
 // ─────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, isFirst }: { title: string; children: React.ReactNode; isFirst?: boolean }) {
   const kids = React.Children.toArray(children).filter(Boolean);
   return (
-    <View style={{ marginTop: 36 }}>
+    <View style={{ marginTop: isFirst ? 0 : 24 }}>
       <Text style={styles.sectionTitle}>{title}</Text>
       <View style={styles.sectionDivider} />
       <View style={styles.sectionGroup}>
