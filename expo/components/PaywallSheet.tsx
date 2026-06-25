@@ -120,7 +120,7 @@ export function PaywallSheet({
       </Animated.View>
 
       <View style={[styles.anchor, { pointerEvents: "box-none" }]}>
-        <Animated.View entering={SlideInDown.springify().dampingRatio(0.7).stiffness(280)} style={styles.sheet}>
+        <Animated.View entering={SlideInDown.springify().stiffness(300).damping(20)} style={styles.sheet}>
           {/* Blurred insights preview background */}
           <View style={styles.blurPreview} pointerEvents="none">
             <View style={styles.blurBar1} />

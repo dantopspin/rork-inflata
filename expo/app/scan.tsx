@@ -115,6 +115,7 @@ export default function ScanScreen() {
           };
         }),
       );
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStage("review");
     } catch (err) {
       console.log("[scan] gallery OCR failed", err);
@@ -159,6 +160,7 @@ export default function ScanScreen() {
           };
         }),
       );
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStage("review");
     } catch (err) {
       console.log("[scan] AI OCR failed, using fallback", err);
@@ -436,7 +438,7 @@ function ReviewView({
     }
   }, []);
   return (
-    <Animated.View entering={SlideInUp.springify().dampingRatio(0.7)} style={styles.reviewSheet}>
+    <Animated.View entering={SlideInUp.springify().stiffness(300).damping(20)} style={styles.reviewSheet}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
@@ -586,7 +588,7 @@ function InflationDiscovery({
   const totalOverspend = overspent.reduce((sum, m) => sum + (m.scanned - m.avg), 0);
 
   return (
-    <Animated.View entering={SlideInUp.springify().dampingRatio(0.7)} style={styles.reviewSheet}>
+    <Animated.View entering={SlideInUp.springify().stiffness(300).damping(20)} style={styles.reviewSheet}>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}

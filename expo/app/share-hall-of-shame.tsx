@@ -40,7 +40,7 @@ export default function ShareHallOfShame() {
         {/* Blurred / grayscale Hall of Shame card behind the lock */}
         {hasShameToShow ? (
           <View style={styles.lockedCardPreview}>
-            <BlurView intensity={14} tint="light" style={StyleSheet.absoluteFill} />
+            <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
             <View style={{ opacity: 0.35 }}>
               <HallOfShameCard items={top} inflation={inflation} monthLabel={monthLabel} />
             </View>

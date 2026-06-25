@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  useSharedValue,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
@@ -18,11 +20,19 @@ export function ConfidenceBadge({ c }: { c: Confidence }) {
       ? { bg: Colors.accentSoft, fg: Colors.accent, dot: Colors.accent }
       : { bg: Colors.amberSoft, fg: Colors.amber, dot: Colors.amber };
 
-  // Pulse animation for the "GATHERING INTELLIGENCE" dot
+  // Pulse animation for the "GATHERING INTELLIGENCE" dot (0.3 → 1.0)
+  const dotOpacity = useSharedValue<number>(1);
+
+  useEffect(() => {
+    if (isLow) {
+      dotOpacity.value = withRepeat(withTiming(0.3, { duration: 800 }), -1, true);
+    } else {
+      dotOpacity.value = 1;
+    }
+  }, [isLow]);
+
   const pulseStyle = useAnimatedStyle(() => ({
-    opacity: isLow
-      ? withRepeat(withTiming(0.35, { duration: 800 }), -1, true)
-      : 1,
+    opacity: dotOpacity.value,
   }));
 
   return (
