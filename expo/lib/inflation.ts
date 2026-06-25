@@ -131,10 +131,13 @@ export function withOverspend(stats: ItemStat[], frequency: string | null): Item
     const delta = latest.price - penultimate.price;
     if (delta <= 0) return { ...s, cumulativeOverspend: 0 };
 
-    // Project the price increase to a 30-day window
-    const daysBetween =
+    // Project the price increase to a 30-day window.
+    // Math.max(1, daysBetween) prevents divide-by-zero and Infinity when
+    // the user scans two receipts on the same day.
+    const rawDaysBetween =
       (new Date(latest.date).getTime() - new Date(penultimate.date).getTime()) /
       (1000 * 60 * 60 * 24);
+    const daysBetween = Math.max(1, rawDaysBetween);
     const effectiveDays = Math.max(daysBetween, avgDaysBetween);
 
     const tax30 = delta * (30 / effectiveDays);

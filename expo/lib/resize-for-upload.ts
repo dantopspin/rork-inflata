@@ -1,14 +1,39 @@
 import { manipulateAsync, SaveFormat, type Action } from "expo-image-manipulator";
+import { Image } from "react-native";
 
 const DEFAULT_MAX_BYTES = 3_000_000;
 
-const LADDER = [
+type LadderStep = { width: number; compress: number };
+
+// Standard ladder for regular receipts and images.
+const LADDER: LadderStep[] = [
   { width: 1280, compress: 0.82 },
   { width: 1024, compress: 0.78 },
   { width: 832, compress: 0.74 },
   { width: 640, compress: 0.7 },
   { width: 512, compress: 0.65 },
-] as const;
+];
+
+// Long-receipt ladder: uses larger widths to preserve text legibility
+// when the image is very tall (height > 2× width).
+const LONG_RECEIPT_LADDER: LadderStep[] = [
+  { width: 1600, compress: 0.85 },
+  { width: 1400, compress: 0.82 },
+  { width: 1200, compress: 0.78 },
+  { width: 1024, compress: 0.74 },
+  { width: 832, compress: 0.7 },
+];
+
+/** Resolve image dimensions so we can detect long receipts before resizing. */
+function getImageSize(uri: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(
+      uri,
+      (width, height) => resolve({ width, height }),
+      reject,
+    );
+  });
+}
 
 /** Calculate raw byte length of a base64 string without the Buffer polyfill. */
 function base64ByteLength(b64: string): number {
@@ -32,7 +57,20 @@ export async function resizeForUpload(
   imageUri: string,
   maxBytes: number = DEFAULT_MAX_BYTES,
 ): Promise<{ base64: string; mimeType: "image/jpeg" }> {
-  for (const step of LADDER) {
+  // Detect long receipts (height > 2× width) and use a wider ladder to
+  // preserve text legibility. A narrow resize on a tall receipt makes
+  // OCR unreadable.
+  let ladder = LADDER;
+  try {
+    const size = await getImageSize(imageUri);
+    if (size.height > size.width * 2) {
+      ladder = LONG_RECEIPT_LADDER;
+    }
+  } catch {
+    // Image.getSize failed — fall back to the standard ladder.
+  }
+
+  for (const step of ladder) {
     const actions: Action[] = [{ resize: { width: step.width } }];
 
     const result = await manipulateAsync(imageUri, actions, {

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import Purchases, { type CustomerInfo, type PurchasesOfferings } from "react-native-purchases";
 
 // ── RevenueCat configuration ──────────────────────────────────────────────
@@ -188,7 +188,33 @@ export async function restore(): Promise<Entitlement | null> {
   return ent.active ? ent : null;
 }
 
-/** Cancel / expire the current subscription. */
+/**
+ * Clear the local entitlement cache so the app treats the user as unsubscribed.
+ * This does NOT cancel the actual App Store / Play Store subscription — the user
+ * must manage their subscription through the platform's native settings.
+ *
+ * Use `manageSubscription()` to open the native subscription management page
+ * where users can cancel, upgrade, or downgrade their plan.
+ */
 export async function cancel(): Promise<void> {
   await AsyncStorage.removeItem(CACHE_KEY);
+}
+
+const APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions";
+const GOOGLE_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions";
+
+/**
+ * Open the native App Store / Play Store subscription management page so users
+ * can cancel, upgrade, or downgrade their plan without feeling trapped.
+ */
+export async function manageSubscription(): Promise<void> {
+  const url = Platform.OS === "android" ? GOOGLE_SUBSCRIPTIONS_URL : APPLE_SUBSCRIPTIONS_URL;
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    }
+  } catch {
+    // Silently fail — the user can always navigate manually.
+  }
 }
