@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Share2, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Settings, Share2, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
@@ -396,6 +396,22 @@ function Header() {
   return (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <Text style={styles.brand}>INFLATA</Text>
+      <View style={{ flex: 1 }} />
+      <Pressable
+        onPress={() => {
+          if (Platform.OS !== "web") Haptics.selectionAsync();
+          router.push("/settings");
+        }}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Settings"
+        style={({ pressed }) => [
+          styles.gearBtn,
+          pressed && { opacity: 0.6 },
+        ]}
+      >
+        <Settings size={18} color={Colors.mutedForeground} strokeWidth={1.8} />
+      </Pressable>
     </View>
   );
 }
@@ -462,6 +478,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   brand: { fontFamily: Fonts.mono, fontSize: 13, letterSpacing: 1, color: Colors.foreground },
+  gearBtn: { padding: 4, borderRadius: Radius.full },
 
   /* ========== HERO METRIC CARD ========== */
   heroCard: {

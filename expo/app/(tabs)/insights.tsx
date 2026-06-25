@@ -82,7 +82,7 @@ function pctColor(pct: number): string {
   return Colors.mutedForeground;
 }
 
-export default function Trends() {
+export default function Insights() {
   const insets = useSafeAreaInsets();
   const { subscribed, scans } = useApp();
   const [paywall, setPaywall] = useState(false);
@@ -125,7 +125,7 @@ export default function Trends() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.kicker}>SPENDING</Text>
+        <Text style={styles.kicker}>INSIGHTS</Text>
         <Text style={styles.title}>Month over month</Text>
 
         <View style={{ position: "relative", marginTop: 32 }}>
@@ -200,7 +200,7 @@ export default function Trends() {
             <BlurView intensity={55} tint="light" style={styles.lockOverlay}>
               <View style={styles.lockInner}>
                 <Lock size={32} color={Colors.accent} />
-                <Text style={styles.lockTitle}>Trends are locked.</Text>
+                <Text style={styles.lockTitle}>Insights are locked.</Text>
                 <Text style={styles.lockBody}>
                   See exactly how your spend shifts month over month, plus what's driving it.
                 </Text>
@@ -222,7 +222,7 @@ export default function Trends() {
       <PaywallSheet
         open={paywall}
         onClose={() => setPaywall(false)}
-        reason="Trends are a paid feature"
+        reason="Insights are a paid feature"
       />
     </View>
   );
