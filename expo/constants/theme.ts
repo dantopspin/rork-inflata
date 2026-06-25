@@ -4,7 +4,7 @@
  * Ported faithfully from the source web app's CSS custom properties.
  */
 export const Colors = {
-  background: "#FAF9F5", // hsl(40 20% 98%) warm cream
+  background: "#F9FAFB", // cold off-white — clinical & professional
   foreground: "#121212", // hsl(0 0% 7%) near-black
   surface: "#FFFFFF",
   surface2: "#F3F1EE",
@@ -15,8 +15,10 @@ export const Colors = {
   accentSoft: "#FEEAE3", // hsl(12 92% 96%)
   destructive: "#E63535", // hsl(0 84% 55%)
   destructiveForeground: "#FFFFFF",
-  border: "rgba(0,0,0,0.10)",
+  border: "rgba(0,0,0,0.18)",
   borderStrong: "rgba(0,0,0,0.16)",
+  success: "#10B981",
+  successSoft: "#ECFDF5",
   amber: "#D97706",
   amberSoft: "rgba(217,119,6,0.10)",
   white: "#FFFFFF",
@@ -37,8 +39,8 @@ export const Fonts = {
 export const Radius = {
   sm: 8,
   md: 12,
-  lg: 16,
-  xl: 20,
+  lg: 10,
+  xl: 14,
   xxl: 24,
   full: 999,
 } as const;
