@@ -6,7 +6,7 @@
       "path": "expo",
       "framework": "react-native",
       "settings": {
-        "displayName": "Inflated",
+        "displayName": "Inflata",
         "iosBundleId": "app.rork.inflata",
         "androidPackage": "app.rork.inflata"
       }

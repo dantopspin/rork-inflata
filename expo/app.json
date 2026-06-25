@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Inflated",
+    "name": "Inflata",
     "slug": "sifgcfr83yo9q355drg4c",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "scheme": "rork-app",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
+"ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.inflata"
     },
