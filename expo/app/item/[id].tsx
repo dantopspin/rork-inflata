@@ -199,6 +199,23 @@ export default function ItemDetail() {
           ) : null}
         </View>
 
+        {/* ===== LOW CONFIDENCE UNIT-PRICE WARNING ===== */}
+        {stat.unitPriceConfidence === "low" && unitPriceEntries.length >= 2 ? (
+          <View style={[styles.card, { marginTop: 24, borderColor: Colors.amber, borderWidth: 1.5 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <AlertTriangle size={14} color={Colors.amber} strokeWidth={2.5} />
+              <Text style={[styles.cardKicker, { color: Colors.amber }]}>
+                LOW CONFIDENCE — VERIFY UNITS
+              </Text>
+            </View>
+            <Text style={styles.shrinkBody}>
+              The unit-price data for {stat.name} is incomplete or inconsistent. Some scans may be missing
+              quantity information (e.g., oz, ct). Tap each price entry below and confirm the correct
+              unit size so your inflation math stays accurate.
+            </Text>
+          </View>
+        ) : null}
+
         {/* ===== SHRINKFLATION WARNING ===== */}
         {isShrinkflation ? (
           <View style={[styles.card, { marginTop: 24, borderColor: Colors.amber, borderWidth: 1.5 }]}>

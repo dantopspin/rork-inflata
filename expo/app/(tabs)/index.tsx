@@ -20,6 +20,7 @@ import {
   nextTripStrategyItems,
   realScanCount,
   savingsFound,
+  topSpikingItems,
   totalSpendBaselineVsCurrent,
   weeklyBurnRate,
   withOverspend,
@@ -46,6 +47,7 @@ export default function Dashboard() {
     [stats],
   );
   const strategyItems = useMemo(() => nextTripStrategyItems(scans, stats), [scans, stats]);
+  const topSpikes = useMemo(() => topSpikingItems(stats, 3), [stats]);
   const recentScans = useMemo(
     () =>
       [...scans]
@@ -111,6 +113,38 @@ export default function Dashboard() {
             </View>
           </View>
         </Animated.View>
+
+        {/* ===== INFLATION ALERT TICKER ===== */}
+        {topSpikes.length > 0 ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(100)} style={{ marginTop: 20, paddingHorizontal: 24 }}>
+            <View style={styles.tickerTrack}>
+              <View style={styles.tickerBadge}>
+                <AlertTriangle size={11} color={Colors.accentForeground} strokeWidth={2.5} />
+                <Text style={styles.tickerBadgeText}>INFLATION ALERT</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 16, paddingRight: 24 }}
+              >
+                {topSpikes.map((s) => (
+                  <Pressable
+                    key={s.key}
+                    onPress={() => router.push(`/item/${s.key}`)}
+                    style={({ pressed }) => [styles.tickerItem, pressed && { opacity: 0.7 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${s.name} unit price up ${fmtPct(s.unitPriceChange ?? 0)}`}
+                  >
+                    <Text style={styles.tickerItemName} numberOfLines={1}>{s.name}</Text>
+                    <Text style={styles.tickerItemPct}>
+                      +{fmtPct(s.unitPriceChange ?? 0, false)} per unit
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </Animated.View>
+        ) : null}
 
         {/* ===== HERO METRIC CARD ===== */}
         <Animated.View entering={FadeInDown.duration(400).delay(60)} style={{ paddingHorizontal: 22, marginTop: 24 }}>
@@ -539,6 +573,37 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   inflationBarFill: { height: "100%", borderRadius: 999 },
+
+  /* ========== INFLATION ALERT TICKER ========== */
+  tickerTrack: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.foreground,
+    borderRadius: Radius.full,
+    paddingLeft: 4,
+    paddingRight: 4,
+    paddingVertical: 4,
+    overflow: "hidden",
+  },
+  tickerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.accent,
+    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 4,
+  },
+  tickerBadgeText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.8, color: Colors.accentForeground },
+  tickerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  tickerItemName: { fontFamily: Fonts.semibold, fontSize: 12, letterSpacing: -0.2, color: Colors.background, maxWidth: 100 },
+  tickerItemPct: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.accent },
 
   /* ========== HERO METRIC CARD ========== */
   heroCard: {

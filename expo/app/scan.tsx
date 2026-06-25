@@ -365,6 +365,7 @@ export default function ScanScreen() {
           onUpgrade={() => setPaywall(true)}
           priorAvgPrice={priorAvgPrice}
           bestStoreMap={bestStoreMap}
+          isFirstScan={realScanCount(scans) === 0}
         />
       ) : null}
 
@@ -417,6 +418,7 @@ function ReviewView({
   onUpgrade,
   priorAvgPrice,
   bestStoreMap,
+  isFirstScan,
 }: {
   insets: { top: number; bottom: number };
   store: string;
@@ -432,6 +434,7 @@ function ReviewView({
   onUpgrade: () => void;
   priorAvgPrice: Map<string, number>;
   bestStoreMap: Map<string, { price: number; store: string }>;
+  isFirstScan: boolean;
 }) {
   // Haptic warning if any item has spiked >10% vs prior average
   useEffect(() => {
@@ -444,6 +447,48 @@ function ReviewView({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
   }, []);
+
+  // Cross-Store Price Check: compute total potential savings vs cheapest store
+  const crossStoreSavings = (() => {
+    let totalSaved = 0;
+    const storeSavings = new Map<string, number>();
+    for (const it of items) {
+      const price = Number.parseFloat(it.priceStr);
+      if (!Number.isFinite(price)) continue;
+      const best = bestStoreMap.get(it.itemKey);
+      if (best && best.price < price) {
+        const diff = price - best.price;
+        totalSaved += diff;
+        storeSavings.set(best.store, (storeSavings.get(best.store) ?? 0) + diff);
+      }
+    }
+    let topStore = "";
+    let topStoreSaved = 0;
+    for (const [st, saved] of storeSavings) {
+      if (saved > topStoreSaved) { topStoreSaved = saved; topStore = st; }
+    }
+    const hasSavings = totalSaved > 0 && items.some((it) => bestStoreMap.has(it.itemKey));
+    return { totalSaved, topStore, topStoreSaved, hasSavings };
+  })();
+
+  // First-scan National Average Comparison
+  const nationalComparison = (() => {
+    if (!isFirstScan) return null;
+    const matches: { name: string; scanned: number; avg: number; over: boolean }[] = [];
+    for (const it of items) {
+      const staple = STAPLES.find((s) => s.id === it.itemKey);
+      if (!staple) continue;
+      const scanned = Number.parseFloat(it.priceStr);
+      if (!Number.isFinite(scanned)) continue;
+      const normalized = normalizeToStapleUnit(it.rawName, staple, scanned);
+      if (normalized === null) continue;
+      matches.push({ name: it.name, scanned: normalized, avg: staple.avgPrice, over: normalized > staple.avgPrice });
+    }
+    if (!matches.length) return null;
+    const totalOver = matches.filter((m) => m.over).reduce((s, m) => s + (m.scanned - m.avg), 0);
+    return { matches, totalOver };
+  })();
+
   return (
     <Animated.View entering={SlideInUp.springify().stiffness(300).damping(20)} style={styles.reviewSheet}>
       <KeyboardAvoidingView
@@ -478,6 +523,48 @@ function ReviewView({
               </View>
             </View>
           </TouchableWithoutFeedback>
+
+          {/* Cross-Store Price Check — savings summary */}
+          {crossStoreSavings.hasSavings ? (
+            <View style={styles.savingsSummary}>
+              <Text style={styles.savingsSummaryKicker}>CROSS-STORE PRICE CHECK</Text>
+              <Text style={styles.savingsSummaryValue}>
+                You could save {fmtUSD(crossStoreSavings.totalSaved)}
+              </Text>
+              <Text style={styles.savingsSummaryHint}>
+                by shopping at {crossStoreSavings.topStore || "another store"} for these items
+              </Text>
+            </View>
+          ) : null}
+
+          {/* First-Scan National Average Comparison */}
+          {nationalComparison ? (
+            <View style={styles.nationalCard}>
+              <Text style={styles.savingsSummaryKicker}>NATIONAL AVERAGE COMPARISON</Text>
+              {nationalComparison.totalOver > 0 ? (
+                <Text style={styles.nationalTitle}>
+                  {fmtUSD(nationalComparison.totalOver)} above national avg
+                </Text>
+              ) : (
+                <Text style={[styles.nationalTitle, { color: Colors.success }]}>
+                  At or below national averages
+                </Text>
+              )}
+              <View style={{ gap: 6, marginTop: 12 }}>
+                {nationalComparison.matches.slice(0, 4).map((m) => (
+                  <View key={m.name} style={styles.nationalRow}>
+                    <Text style={styles.nationalItemName}>{m.name}</Text>
+                    <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
+                      <Text style={[styles.nationalItemPrice, m.over && { color: Colors.accent }]}>
+                        {fmtUSD(m.scanned)}
+                      </Text>
+                      <Text style={styles.nationalItemAvg}>Avg {fmtUSD(m.avg)}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           <View style={{ marginTop: 8 }}>
             {items.map((it) => {
@@ -1052,6 +1139,54 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: Colors.amber,
   },
+
+  /* Cross-Store Savings Summary */
+  savingsSummary: {
+    marginTop: 16,
+    marginHorizontal: 4,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    padding: 16,
+  },
+  savingsSummaryKicker: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.2, color: Colors.accent },
+  savingsSummaryValue: {
+    marginTop: 6,
+    fontFamily: Fonts.extrabold,
+    fontSize: 22,
+    letterSpacing: -0.6,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"] as const,
+  },
+  savingsSummaryHint: { marginTop: 4, fontFamily: Fonts.regular, fontSize: 13, color: Colors.foreground, lineHeight: 18 },
+
+  /* National Average Comparison Card */
+  nationalCard: {
+    marginTop: 12,
+    marginHorizontal: 4,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
+  },
+  nationalTitle: {
+    marginTop: 4,
+    fontFamily: Fonts.extrabold,
+    fontSize: 18,
+    letterSpacing: -0.5,
+    color: Colors.accent,
+  },
+  nationalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  nationalItemName: { fontFamily: Fonts.semibold, fontSize: 13, letterSpacing: -0.2, color: Colors.foreground, flex: 1 },
+  nationalItemPrice: { fontFamily: Fonts.bold, fontSize: 14, color: Colors.success, fontVariant: ["tabular-nums"] as const, minWidth: 60, textAlign: "right" as const },
+  nationalItemAvg: { fontFamily: Fonts.mono, fontSize: 10, color: Colors.mutedForeground, minWidth: 56, textAlign: "right" as const },
 
   // Inflation Discovery
   discoveryKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.accent },

@@ -110,6 +110,47 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
     // Most recent entry that has a canonical unit price
     const lastUnitEntry = [...entries].reverse().find((e) => e.canonicalUnitPrice != null);
 
+    // --- Smart Save detection ---
+    // Flag when the user bought a cheaper version of an item they've purchased before.
+    // Criteria: (1) at least 2 real scans of this item, (2) latest price is below the
+    // average of prior prices, (3) latest store differs from the most common prior store.
+    let isSmartSave = false;
+    const realOnly = entries.filter((e) => !e.fromBaseline);
+    if (realOnly.length >= 2) {
+      const latest = realOnly[realOnly.length - 1];
+      const priors = realOnly.slice(0, -1);
+      const priorAvg = priors.reduce((s, e) => s + e.price, 0) / priors.length;
+      if (latest.price < priorAvg * 0.95) {
+        // Count store frequencies among priors to find the "usual" store
+        const storeCount = new Map<string, number>();
+        for (const p of priors) storeCount.set(p.store, (storeCount.get(p.store) ?? 0) + 1);
+        let usualStore = "";
+        let maxCount = 0;
+        for (const [st, c] of storeCount) {
+          if (c > maxCount) { maxCount = c; usualStore = st; }
+        }
+        // Smart save: cheaper AND from a different store than usual
+        if (latest.store && usualStore && latest.store !== usualStore) {
+          isSmartSave = true;
+        }
+      }
+    }
+
+    // --- Unit-price confidence ---
+    const unitEntries = entries.filter((e) => e.canonicalUnitPrice != null);
+    let unitPriceConfidence: "low" | "medium" | "high" = "low";
+    let unitPriceChange: number | undefined;
+    if (unitEntries.length >= 2) {
+      const firstUP = unitEntries[0].canonicalUnitPrice!;
+      const lastUP = unitEntries[unitEntries.length - 1].canonicalUnitPrice!;
+      if (firstUP > 0) unitPriceChange = ((lastUP - firstUP) / firstUP) * 100;
+      const totalEntries = entries.length;
+      const unitRatio = unitEntries.length / totalEntries;
+      if (unitRatio >= 0.8) unitPriceConfidence = "high";
+      else if (unitRatio >= 0.4) unitPriceConfidence = "medium";
+      // stays "low" otherwise
+    }
+
     stats.push({
       key,
       name: last.name,
@@ -133,6 +174,9 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       unitQuantity: lastUnitEntry?.unitQuantity,
       unitMeasure: lastUnitEntry?.unitMeasure,
       totalSpend,
+      isSmartSave: isSmartSave || undefined,
+      unitPriceChange,
+      unitPriceConfidence: unitEntries.length >= 2 ? unitPriceConfidence : undefined,
       history: entries.map((e) => ({
         date: e.date,
         price: e.price,
@@ -338,4 +382,15 @@ export function hasRecentSpike(stat: ItemStat): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Top N items by unit-price spike magnitude for the Inflation Alert ticker.
+ * Returns items with known unit-price trends, sorted by highest unit-price increase.
+ */
+export function topSpikingItems(stats: ItemStat[], limit: number = 3): ItemStat[] {
+  return stats
+    .filter((s) => s.unitPriceChange != null && s.unitPriceChange > 0)
+    .sort((a, b) => (b.unitPriceChange ?? 0) - (a.unitPriceChange ?? 0))
+    .slice(0, limit);
 }

@@ -48,6 +48,9 @@ export type ItemStat = {
   unitQuantity?: number; // most recent known quantity
   unitMeasure?: string; // most recent known unit of measure
   totalSpend: number; // total amount spent on this item across all real scans
+  isSmartSave?: boolean; // user bought a cheaper brand/variant of a previously tracked item
+  unitPriceChange?: number; // percentage change in canonical unit price (first→last entry with unit data)
+  unitPriceConfidence?: "low" | "medium" | "high"; // reliability of unit-price trend data
   history: { date: string; price: number; fromBaseline: boolean; store: string; canonicalUnitPrice?: number }[];
 };
 
