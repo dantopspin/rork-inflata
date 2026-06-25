@@ -1,5 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Lock, MapPin, Share2 } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import { Alert, Platform } from "react-native";
+import { ArrowLeft, Lock, MapPin, Share2, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +29,19 @@ export default function ItemDetail() {
 
   const [paywall, setPaywall] = useState<boolean>(false);
   const cardRef = useRef<RNView>(null);
+  const hapticFired = useRef<boolean>(false);
+
+  // Compute the savings per trip if there is a cheaper store
+  const savingsPerTrip = useMemo(() => {
+    if (!stat || stat.cheapestPrice == null || stat.cheapestPrice >= stat.currentPrice) return null;
+    return stat.currentPrice - stat.cheapestPrice;
+  }, [stat]);
+
+  // Find the index of the biggest jump date in the (sorted) history array
+  const biggestJumpIndex = useMemo(() => {
+    if (!stat?.biggestJumpDate || !stat.history.length) return -1;
+    return stat.history.findIndex((h) => h.date === stat.biggestJumpDate);
+  }, [stat]);
 
   if (!hydrated) return <View style={styles.screen} />;
 
@@ -55,6 +70,16 @@ export default function ItemDetail() {
           <Text style={styles.backBtnText}>DASHBOARD</Text>
         </Pressable>
 
+        {/* Savings Mission Badge */}
+        {savingsPerTrip != null ? (
+          <View style={styles.missionBadge}>
+            <TrendingUp size={14} color={Colors.success} strokeWidth={2.5} />
+            <Text style={styles.missionText}>
+              GOAL: SAVE {fmtUSD(savingsPerTrip)} PER TRIP
+            </Text>
+          </View>
+        ) : null}
+
         <Text style={styles.name}>{stat.name}</Text>
         <Text style={styles.since}>
           {fmtPct(stat.pctChange)} since {fmtDateLong(stat.firstDate)}
@@ -74,7 +99,21 @@ export default function ItemDetail() {
         <View style={styles.card}>
           <Text style={styles.cardKicker}>PRICE HISTORY</Text>
           <View style={{ marginTop: 12 }}>
-            <Sparkline prices={stat.history.map((h) => h.price)} height={96} strokeWidth={2.5} />
+            <View>
+              <Sparkline prices={stat.history.map((h) => h.price)} height={96} strokeWidth={2.5} />
+              {/* Biggest Jump vertical marker */}
+              {biggestJumpIndex >= 0 && stat.history.length > 1 ? (
+                <View
+                  style={[
+                    styles.jumpMarker,
+                    { left: `${(biggestJumpIndex / (stat.history.length - 1)) * 100}%` },
+                  ]}
+                >
+                  <View style={styles.jumpMarkerLine} />
+                  <View style={styles.jumpMarkerDot} />
+                </View>
+              ) : null}
+            </View>
           </View>
           <View style={styles.firstLatest}>
             <View>
@@ -97,7 +136,15 @@ export default function ItemDetail() {
 
         {/* Best Price Found At — store-to-store arbitrage */}
         {stat.cheapestPrice !== undefined && stat.cheapestStore ? (
-          <View style={[styles.card, { marginTop: 24 }]}>
+          <View
+            style={[styles.card, { marginTop: 24 }]}
+            onLayout={() => {
+              if (!hapticFired.current && Platform.OS !== "web") {
+                hapticFired.current = true;
+                Haptics.selectionAsync();
+              }
+            }}
+          >
             <Text style={styles.cardKicker}>BEST PRICE FOUND AT</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}>
               <MapPin size={14} color={Colors.accent} strokeWidth={1.8} />
@@ -110,6 +157,34 @@ export default function ItemDetail() {
                 that&apos;s {((stat.currentPrice - stat.cheapestPrice) / stat.cheapestPrice * 100).toFixed(0)}% above the best price found.
               </Text>
             ) : null}
+
+            {/* SHOP HERE NEXT button */}
+            {stat.cheapestPrice < stat.currentPrice ? (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.shopHereBtn,
+                  pressed && { transform: [{ scale: 0.98 }] },
+                ]}
+                onPress={() => {
+                  Alert.alert(
+                    `Shop at ${stat.cheapestStore}`,
+                    `Look for ${stat.name} at ${fmtUSD(stat.cheapestPrice!)}. The best price we've tracked was at ${stat.cheapestStore}.`,
+                    [{ text: "Got it", style: "default" }],
+                  );
+                }}
+              >
+                <Text style={styles.shopHereBtnText}>SHOP HERE NEXT</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Substitution suggestion for highly volatile items */}
+        {stat.pctChange > 20 ? (
+          <View style={styles.subFooter}>
+            <Text style={styles.subFooterText}>
+              Prices for this item are volatile. Consider a generic brand or buying in bulk next trip.
+            </Text>
           </View>
         ) : null}
 
@@ -167,6 +242,28 @@ const styles = StyleSheet.create({
   backLink: { marginTop: 16, fontFamily: Fonts.bold, fontSize: 14, color: Colors.accent },
   backBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
   backBtnText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, color: Colors.mutedForeground },
+
+  /* Savings Mission Badge */
+  missionBadge: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    backgroundColor: Colors.successSoft,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.success,
+  },
+  missionText: {
+    fontFamily: Fonts.bold,
+    fontSize: 12.5,
+    letterSpacing: 0.3,
+    color: Colors.success,
+  },
+
   name: { marginTop: 24, fontFamily: Fonts.extrabold, fontSize: 36, lineHeight: 40, letterSpacing: -1.2, color: Colors.foreground },
   since: { marginTop: 8, fontFamily: Fonts.bold, fontSize: 16, color: Colors.accent },
   pocket: { marginTop: 6, fontSize: 14, lineHeight: 20, color: Colors.foreground, fontFamily: Fonts.regular },
@@ -181,6 +278,32 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   cardKicker: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.5, color: Colors.mutedForeground },
+
+  /* Biggest Jump vertical marker */
+  jumpMarker: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 2,
+    alignItems: "center",
+  },
+  jumpMarkerLine: {
+    position: "absolute",
+    top: 0,
+    bottom: 12,
+    width: 2,
+    backgroundColor: Colors.accent,
+    opacity: 0.5,
+  },
+  jumpMarkerDot: {
+    position: "absolute",
+    bottom: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.accent,
+  },
+
   firstLatest: { marginTop: 12, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   flLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
   flValue: { marginTop: 2, fontFamily: Fonts.bold, fontSize: 18, color: Colors.foreground, fontVariant: ["tabular-nums"] },
@@ -196,6 +319,47 @@ const styles = StyleSheet.create({
   },
   histPrice: { fontFamily: Fonts.semibold, fontSize: 14, color: Colors.foreground, fontVariant: ["tabular-nums"] },
   histMeta: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
+
+  /* SHOP HERE NEXT button */
+  shopHereBtn: {
+    marginTop: 16,
+    height: 48,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shopHereBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 12.5,
+    letterSpacing: 0.8,
+    color: Colors.success,
+  },
+
+  /* Substitution footer */
+  subFooter: {
+    marginTop: 24,
+    paddingHorizontal: 4,
+  },
+  subFooterText: {
+    fontFamily: Fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Colors.mutedForeground,
+  },
+
+  cheapestLabel: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  cheapestPrice: {
+    marginTop: 6,
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    letterSpacing: -0.8,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  savingsNote: { marginTop: 8, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+
   shareBtn: {
     marginTop: 32,
     height: 52,
@@ -224,14 +388,4 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   lockBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.foreground },
-  cheapestLabel: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
-  cheapestPrice: {
-    marginTop: 6,
-    fontFamily: Fonts.extrabold,
-    fontSize: 28,
-    letterSpacing: -0.8,
-    color: Colors.accent,
-    fontVariant: ["tabular-nums"],
-  },
-  savingsNote: { marginTop: 8, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
 });
