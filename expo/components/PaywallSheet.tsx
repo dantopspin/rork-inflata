@@ -14,15 +14,18 @@ import {
 import Animated, { FadeIn, SlideInDown } from "react-native-reanimated";
 
 import { Colors, Fonts, Radius } from "@/constants/theme";
+import { fmtUSD } from "@/lib/format";
 import { getOfferingsForPaywall, PlanId } from "@/lib/subscription";
 import { useApp } from "@/providers/AppProvider";
 
-const FEATURES = [
+const DEFENSE_FEATURES = [
   "Price Spike Alerts — catch hikes before checkout",
-  "Store Comparison — see where each item is cheapest",
-  "Unlimited receipt scans — track every trip",
-  "Shareable Hall of Shame & spike cards",
-  "Full Spending Trends & category breakdowns",
+  "Best-Store Detection — see where each item is cheapest",
+];
+
+const INTELLIGENCE_FEATURES = [
+  "Historical Trends & category breakdowns",
+  "CSV Export — take your data anywhere",
 ];
 
 type PlanMeta = { price: string; cadence: string };
@@ -31,10 +34,12 @@ export function PaywallSheet({
   open,
   onClose,
   reason,
+  totalExtra,
 }: {
   open: boolean;
   onClose: () => void;
   reason?: string;
+  totalExtra?: number;
 }) {
   const { subscribe, restorePurchases } = useApp();
   const [busy, setBusy] = useState<PlanId | "restore" | null>(null);
@@ -46,7 +51,6 @@ export function PaywallSheet({
 
   useEffect(() => {
     if (!open) return;
-    // Web doesn't configure Purchases — use fallback prices.
     if (Platform.OS === "web") return;
     (async () => {
       try {
@@ -102,6 +106,13 @@ export function PaywallSheet({
     }
   };
 
+  const extraStr = totalExtra && totalExtra > 0 ? fmtUSD(totalExtra) : null;
+
+  // Compute monthly breakdown for annual plan for price anchoring
+  const monthlyEq = planMeta.annual.price.startsWith("$")
+    ? (parseFloat(planMeta.annual.price.replace("$", "")) / 12).toFixed(2)
+    : null;
+
   return (
     <Modal visible={open} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View entering={FadeIn.duration(180)} style={styles.backdrop}>
@@ -110,6 +121,15 @@ export function PaywallSheet({
 
       <View style={[styles.anchor, { pointerEvents: "box-none" }]}>
         <Animated.View entering={SlideInDown.springify().dampingRatio(0.7).stiffness(280)} style={styles.sheet}>
+          {/* Blurred insights preview background */}
+          <View style={styles.blurPreview} pointerEvents="none">
+            <View style={styles.blurBar1} />
+            <View style={styles.blurBar2} />
+            <View style={styles.blurBar3} />
+            <View style={styles.blurBar4} />
+            <View style={styles.blurBar5} />
+          </View>
+
           <View style={styles.header}>
             <Text style={styles.kicker}>PREMIUM</Text>
             <Pressable
@@ -124,10 +144,19 @@ export function PaywallSheet({
           </View>
 
           {reason ? <Text style={styles.reason}>{reason.toUpperCase()}</Text> : null}
-          <Text style={styles.title}>
-            Stop the overspend.{"\n"}
-            <Text style={{ color: Colors.accent }}>Know every price before you pay.</Text>
-          </Text>
+
+          {extraStr ? (
+            <Text style={styles.title}>
+              Inflation is costing you{" "}
+              <Text style={{ color: Colors.accent }}>{extraStr}</Text> extra this month.{"\n"}
+              <Text style={{ color: Colors.foreground }}>Stop the overspend today.</Text>
+            </Text>
+          ) : (
+            <Text style={styles.title}>
+              Stop the overspend.{"\n"}
+              <Text style={{ color: Colors.accent }}>Know every price before you pay.</Text>
+            </Text>
+          )}
 
           <View style={styles.plans}>
             <PlanCard
@@ -143,17 +172,31 @@ export function PaywallSheet({
               title="Annual"
               price={planMeta.annual.price}
               cadence={planMeta.annual.cadence}
-              badge="Save 37%"
+              monthlyEq={monthlyEq}
+              badge="Best Value"
               primary
               loading={busy === "annual"}
               disabled={busy !== null}
               onPress={() => handleSubscribe("annual")}
-              accessibilityLabel={`Annual plan: ${planMeta.annual.price}${planMeta.annual.cadence}. Save 37 percent`}
+              accessibilityLabel={`Annual plan: ${planMeta.annual.price}${planMeta.annual.cadence}. Best value`}
             />
           </View>
 
-          <View style={styles.features}>
-            {FEATURES.map((line) => (
+          {/* DEFENSE FEATURES */}
+          <View style={styles.featureGroup}>
+            <Text style={styles.featureGroupTitle}>DEFENSE</Text>
+            {DEFENSE_FEATURES.map((line) => (
+              <View key={line} style={styles.featureRow}>
+                <Check size={16} color={Colors.accent} strokeWidth={2.5} />
+                <Text style={styles.featureText}>{line}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* INTELLIGENCE FEATURES */}
+          <View style={styles.featureGroup}>
+            <Text style={styles.featureGroupTitle}>INTELLIGENCE</Text>
+            {INTELLIGENCE_FEATURES.map((line) => (
               <View key={line} style={styles.featureRow}>
                 <Check size={16} color={Colors.accent} strokeWidth={2.5} />
                 <Text style={styles.featureText}>{line}</Text>
@@ -163,12 +206,26 @@ export function PaywallSheet({
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
+          {/* Social proof */}
+          <Text style={styles.socialProof}>Join 1,000+ shoppers fighting inflation.</Text>
+
+          {/* Disclaimer */}
+          <Text style={styles.disclaimer}>Subscription renews automatically. Cancel anytime.</Text>
+
+          {/* Clean footer row */}
           <View style={styles.footer}>
-            <Pressable onPress={handleRestore} disabled={busy !== null} hitSlop={8} accessibilityRole="button" accessibilityLabel="Restore purchases">
+            <Pressable
+              onPress={handleRestore}
+              disabled={busy !== null}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Restore purchases"
+            >
               <Text style={styles.footerLink}>
-                {busy === "restore" ? "Restoring…" : "Restore purchases"}
+                {busy === "restore" ? "Restoring…" : "Restore Purchase"}
               </Text>
             </Pressable>
+            <Text style={styles.footerSep}>|</Text>
             <Pressable
               onPress={() => {
                 onClose();
@@ -176,7 +233,17 @@ export function PaywallSheet({
               }}
               hitSlop={8}
             >
-              <Text style={styles.footerLink}>Privacy policy</Text>
+              <Text style={styles.footerLink}>Privacy Policy</Text>
+            </Pressable>
+            <Text style={styles.footerSep}>|</Text>
+            <Pressable
+              onPress={() => {
+                onClose();
+                router.push("/legal/terms");
+              }}
+              hitSlop={8}
+            >
+              <Text style={styles.footerLink}>Terms of Use</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -189,6 +256,7 @@ function PlanCard({
   title,
   price,
   cadence,
+  monthlyEq,
   badge,
   primary,
   loading,
@@ -198,6 +266,7 @@ function PlanCard({
   title: string;
   price: string;
   cadence: string;
+  monthlyEq?: string | null;
   badge?: string;
   primary?: boolean;
   loading?: boolean;
@@ -227,6 +296,11 @@ function PlanCard({
       <Text style={[styles.planCadence, primary && { color: "rgba(255,255,255,0.7)" }]}>
         {cadence}
       </Text>
+      {monthlyEq ? (
+        <Text style={[styles.planMonthlyEq, primary && { color: "rgba(255,255,255,0.6)" }]}>
+          ${monthlyEq}/mo
+        </Text>
+      ) : null}
       <View style={styles.planCta}>
         {loading ? (
           <ActivityIndicator size="small" color={primary ? Colors.accent : Colors.accent} />
@@ -254,6 +328,65 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 32,
   },
+  /* Blurred insights chart preview behind text */
+  blurPreview: {
+    position: "absolute",
+    top: 60,
+    left: 24,
+    right: 24,
+    bottom: 120,
+    opacity: 0.06,
+  },
+  blurBar1: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    width: "22%",
+    height: "100%",
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  blurBar2: {
+    position: "absolute",
+    bottom: 0,
+    left: "24%",
+    width: "22%",
+    height: "68%",
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  blurBar3: {
+    position: "absolute",
+    bottom: 0,
+    left: "48%",
+    width: "22%",
+    height: "90%",
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  blurBar4: {
+    position: "absolute",
+    bottom: 0,
+    left: "72%",
+    width: "10%",
+    height: "52%",
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  blurBar5: {
+    position: "absolute",
+    bottom: 0,
+    left: "84%",
+    width: "16%",
+    height: "78%",
+    backgroundColor: Colors.accent,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   kicker: {
     fontFamily: Fonts.mono,
@@ -272,12 +405,12 @@ const styles = StyleSheet.create({
   title: {
     marginTop: 8,
     fontFamily: Fonts.extrabold,
-    fontSize: 28,
-    lineHeight: 32,
-    letterSpacing: -0.8,
+    fontSize: 24,
+    lineHeight: 30,
+    letterSpacing: -0.6,
     color: Colors.foreground,
   },
-  plans: { marginTop: 24, flexDirection: "row", gap: 12 },
+  plans: { marginTop: 20, flexDirection: "row", gap: 12 },
   planCard: { flex: 1, borderRadius: Radius.lg, padding: 16, overflow: "hidden" },
   planSecondary: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   planPrimary: { backgroundColor: Colors.foreground },
@@ -311,6 +444,14 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   planCadence: { fontSize: 12, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+  planMonthlyEq: {
+    marginTop: 8,
+    fontWeight: "600",
+    fontSize: 16,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"],
+    fontFamily: Fonts.bold,
+  },
   planCta: { marginTop: 16, flexDirection: "row", alignItems: "center", gap: 6, minHeight: 18 },
   planCtaText: {
     fontFamily: Fonts.bold,
@@ -319,30 +460,55 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     textTransform: "uppercase",
   },
-  features: {
-    marginTop: 24,
+  featureGroup: {
+    marginTop: 18,
+    paddingTop: 14,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    paddingTop: 20,
-    gap: 10,
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  featureGroupTitle: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    letterSpacing: 2,
+    color: Colors.mutedForeground,
+    marginBottom: 2,
   },
   featureRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  featureText: { flex: 1, fontSize: 14, color: Colors.foreground, fontFamily: Fonts.regular },
+  featureText: { flex: 1, fontSize: 13, color: Colors.foreground, fontFamily: Fonts.regular },
   error: {
-    marginTop: 16,
+    marginTop: 12,
     fontSize: 12.5,
     color: Colors.destructive,
     fontFamily: Fonts.medium,
     lineHeight: 18,
   },
+  socialProof: {
+    marginTop: 16,
+    fontSize: 12,
+    color: Colors.mutedForeground,
+    fontFamily: Fonts.medium,
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  disclaimer: {
+    marginTop: 6,
+    fontSize: 10,
+    color: Colors.mutedForeground,
+    fontFamily: Fonts.regular,
+    textAlign: "center",
+  },
   footer: {
-    marginTop: 20,
+    marginTop: 16,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    paddingTop: 16,
+    paddingTop: 14,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: 8,
   },
-  footerLink: { fontSize: 11.5, color: Colors.mutedForeground, fontFamily: Fonts.medium },
+  footerLink: { fontSize: 10, color: Colors.mutedForeground, fontFamily: Fonts.medium },
+  footerSep: { fontSize: 10, color: Colors.borderStrong, fontFamily: Fonts.regular },
 });

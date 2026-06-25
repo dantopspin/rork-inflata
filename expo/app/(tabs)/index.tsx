@@ -328,7 +328,7 @@ export default function Dashboard() {
         </Animated.View>
       </ScrollView>
 
-      <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" />
+      <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" totalExtra={totalDelta} />
       <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} />
     </View>
   );
