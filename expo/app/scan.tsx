@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { Check, Image, Loader2, Trash2, X } from "lucide-react-native";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -71,6 +71,18 @@ export default function ScanScreen() {
     const avg = new Map<string, number>();
     for (const [k, v] of m) avg.set(k, v.total / v.count);
     return avg;
+  })();
+
+  // Best (cheapest) store per itemKey across all past scans
+  const bestStoreMap = (() => {
+    const m = new Map<string, { price: number; store: string }>();
+    for (const s of scans) for (const it of s.items) {
+      const existing = m.get(it.itemKey);
+      if (!existing || it.price < existing.price) {
+        m.set(it.itemKey, { price: it.price, store: s.store });
+      }
+    }
+    return m;
   })();
 
   const pickFromGallery = async () => {
@@ -341,6 +353,7 @@ export default function ScanScreen() {
           gated={hardGate && !subscribed}
           onUpgrade={() => setPaywall(true)}
           priorAvgPrice={priorAvgPrice}
+          bestStoreMap={bestStoreMap}
         />
       ) : null}
 
@@ -392,6 +405,7 @@ function ReviewView({
   gated,
   onUpgrade,
   priorAvgPrice,
+  bestStoreMap,
 }: {
   insets: { top: number; bottom: number };
   store: string;
@@ -406,7 +420,19 @@ function ReviewView({
   gated: boolean;
   onUpgrade: () => void;
   priorAvgPrice: Map<string, number>;
+  bestStoreMap: Map<string, { price: number; store: string }>;
 }) {
+  // Haptic warning if any item has spiked >10% vs prior average
+  useEffect(() => {
+    const hasSpike = items.some((it) => {
+      const price = Number.parseFloat(it.priceStr);
+      const avg = priorAvgPrice.get(it.itemKey);
+      return avg !== undefined && avg > 0 && price > avg * 1.1;
+    });
+    if (hasSpike && Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+  }, []);
   return (
     <Animated.View entering={SlideInUp.springify().dampingRatio(0.7)} style={styles.reviewSheet}>
       <KeyboardAvoidingView
@@ -446,6 +472,7 @@ function ReviewView({
             {items.map((it) => {
               const price = Number.parseFloat(it.priceStr);
               const avg = priorAvgPrice.get(it.itemKey);
+              const best = bestStoreMap.get(it.itemKey);
               const isSpike = avg !== undefined && avg > 0 && price > avg * 1.1;
               return (
               <SwipeRow key={it.id} onDelete={() => deleteOne(it.id)}>
@@ -460,7 +487,7 @@ function ReviewView({
                       <Check size={13} color={Colors.accentForeground} strokeWidth={3} />
                     ) : null}
                   </Pressable>
-                  <View style={{ flex: 1, gap: 6 }}>
+                  <View style={{ flex: 1, gap: 4 }}>
                     <View style={styles.itemInputs}>
                       <TextInput
                         value={it.name}
@@ -472,23 +499,33 @@ function ReviewView({
                         returnKeyType="done"
                         style={styles.nameInput}
                       />
-                      <TextInput
-                        value={it.priceStr}
-                        onChangeText={(t) =>
-                          setItems((prev) =>
-                            prev.map((p) =>
-                              p.id === it.id ? { ...p, priceStr: t.replace(/[^0-9.]/g, "") } : p,
-                            ),
-                          )
-                        }
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                        style={[styles.priceInput, isSpike && styles.priceInputSpike]}
-                      />
+                      <View style={styles.priceWrap}>
+                        <TextInput
+                          value={it.priceStr}
+                          onChangeText={(t) =>
+                            setItems((prev) =>
+                              prev.map((p) =>
+                                p.id === it.id ? { ...p, priceStr: t.replace(/[^0-9.]/g, "") } : p,
+                              ),
+                            )
+                          }
+                          keyboardType="decimal-pad"
+                          returnKeyType="done"
+                          style={[styles.priceInput, isSpike && styles.priceInputSpike]}
+                        />
+                        {isSpike ? (
+                          <Text style={styles.spikeBadge}>SPIKE</Text>
+                        ) : null}
+                      </View>
                     </View>
                     {isSpike ? (
                       <Text style={styles.spikeWarn}>
-                        PRICE SPIKE — {avg ? `${((price - avg) / avg * 100).toFixed(0)}%` : ""} above your avg of {avg ? `$${avg.toFixed(2)}` : "N/A"}
+                        {((price - avg!) / avg! * 100).toFixed(0)}% above your avg of ${avg!.toFixed(2)}
+                      </Text>
+                    ) : null}
+                    {avg !== undefined ? (
+                      <Text style={styles.storeHint}>
+                        Avg: ${avg.toFixed(2)}{best ? ` | Best: $${best.price.toFixed(2)} at ${best.store}` : ""}
                       </Text>
                     ) : (
                       <Text style={styles.ocrLabel}>AI read: {it.rawName}</Text>
@@ -822,10 +859,23 @@ const styles = StyleSheet.create({
     color: Colors.foreground,
   },
   priceInputSpike: {
-    backgroundColor: "rgba(229,53,53,0.12)",
-    color: Colors.destructive,
+    backgroundColor: "rgba(245,72,27,0.12)",
+    color: Colors.accent,
   },
-  spikeWarn: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.destructive },
+  priceWrap: { flexDirection: "row", alignItems: "center", gap: 4 },
+  spikeBadge: {
+    fontFamily: Fonts.mono,
+    fontSize: 8,
+    letterSpacing: 1,
+    color: Colors.accentForeground,
+    backgroundColor: Colors.accent,
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    overflow: "hidden",
+  },
+  spikeWarn: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.accent },
+  storeHint: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.mutedForeground },
   ocrLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: "rgba(115,115,115,0.7)" },
   saveBar: {
     position: "absolute",
