@@ -34,7 +34,7 @@ import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtUSD } from "@/lib/format";
 import { normalize } from "@/lib/normalize";
 import { scanReceipt } from "@/lib/ocr";
-import { FREE_HARD_GATE_AT, STAPLES, uuid } from "@/lib/seed";
+import { FREE_HARD_GATE_AT, STAPLES, uuid, type Staple } from "@/lib/seed";
 import { realScanCount } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
@@ -564,6 +564,102 @@ function ReviewView({
   );
 }
 
+/**
+ * Normalize a scanned price to the staple's reference unit for fair
+ * apples-to-apples comparison. Returns the adjusted price per staple
+ * unit, or null when the scanned quantity cannot be determined from
+ * the OCR raw text — those items are skipped to avoid fake savings.
+ */
+function normalizeToStapleUnit(
+  rawName: string,
+  staple: Staple,
+  scannedPrice: number,
+): number | null {
+  const upper = rawName.toUpperCase();
+
+  switch (staple.id) {
+    // --- dozen (12 eggs) ---
+    case "eggs": {
+      const ct = upper.match(/(\d+)\s*CT/);
+      if (ct) {
+        const count = Number.parseInt(ct[1]);
+        if (count > 0) return scannedPrice * (12 / count);
+      }
+      if (/\bDOZEN\b|\bDZ\b/.test(upper)) return scannedPrice;
+      if (/HALF\s*DOZEN/.test(upper)) return scannedPrice * 2;
+      return null; // can't tell — skip
+    }
+
+    // --- gallon ---
+    case "milk": {
+      if (/\bGAL\b|\bGALLON\b/i.test(upper)) {
+        if (/HALF\s*GAL/.test(upper)) return scannedPrice * 2;
+        if (/\bQUART\b/i.test(upper)) return scannedPrice * 4;
+        if (/\bPINT\b/i.test(upper)) return scannedPrice * 8;
+        return scannedPrice;
+      }
+      return null;
+    }
+
+    // --- loaf ---
+    case "bread":
+      return scannedPrice;
+
+    // --- 1 lb ---
+    case "butter": {
+      const lb = upper.match(/(\d+(?:\.\d+)?)\s*LB/);
+      if (lb) {
+        const lbs = Number.parseFloat(lb[1]);
+        if (lbs > 0) return scannedPrice / lbs;
+      }
+      if (/\bLB\b/.test(upper)) return scannedPrice;
+      return null;
+    }
+
+    // --- per lb ---
+    case "chicken-breast":
+    case "ground-beef":
+    case "bananas": {
+      const lb = upper.match(/(\d+(?:\.\d+)?)\s*LB/);
+      if (lb) {
+        const lbs = Number.parseFloat(lb[1]);
+        if (lbs > 0) return scannedPrice / lbs;
+      }
+      if (/\bLB\b/.test(upper)) return scannedPrice;
+      return null;
+    }
+
+    // --- half gallon (64 oz) ---
+    case "orange-juice": {
+      const oz = upper.match(/(\d+)\s*OZ/);
+      if (oz) {
+        const ounces = Number.parseInt(oz[1]);
+        return scannedPrice * (64 / ounces);
+      }
+      if (/\bHALF\s*GAL\b/.test(upper)) return scannedPrice;
+      if (/\bGAL\b/.test(upper)) return scannedPrice * 0.5;
+      return null;
+    }
+
+    // --- 8 oz ---
+    case "cheddar": {
+      const oz = upper.match(/(\d+(?:\.\d+)?)\s*OZ/);
+      if (oz) {
+        const ounces = Number.parseFloat(oz[1]);
+        if (ounces > 0) return scannedPrice * (8 / ounces);
+      }
+      return null;
+    }
+
+    // --- single serving ---
+    case "yogurt":
+      return scannedPrice;
+
+    default:
+      return scannedPrice;
+  }
+}
+
 function InflationDiscovery({
   insets,
   items,
@@ -578,11 +674,14 @@ function InflationDiscovery({
       const staple = STAPLES.find(
         (s) => s.id === it.itemKey || s.name.toLowerCase() === it.name.toLowerCase(),
       );
-      return staple
-        ? { name: it.name, scanned: Number.parseFloat(it.priceStr), avg: staple.avgPrice, unit: staple.unit }
-        : null;
+      if (!staple) return null;
+      const scannedPrice = Number.parseFloat(it.priceStr);
+      if (!Number.isFinite(scannedPrice)) return null;
+      const normalized = normalizeToStapleUnit(it.rawName, staple, scannedPrice);
+      if (normalized === null) return null; // quantity unknown — skip
+      return { name: it.name, scanned: normalized, avg: staple.avgPrice, unit: staple.unit };
     })
-    .filter((m): m is NonNullable<typeof m> => !!m && Number.isFinite(m.scanned));
+    .filter((m): m is NonNullable<typeof m> => !!m);
 
   const overspent = matches.filter((m) => m.scanned > m.avg);
   const totalOverspend = overspent.reduce((sum, m) => sum + (m.scanned - m.avg), 0);
@@ -651,7 +750,7 @@ function InflationDiscovery({
           onPress={onContinue}
           style={({ pressed }) => [styles.discoveryBtn, pressed && { transform: [{ scale: 0.99 }] }]}
         >
-          <Text style={styles.discoveryBtnText}>GO TO DASHBOARD</Text>
+          <Text style={styles.discoveryBtnText}>SEE MY NEW SCORE</Text>
         </Pressable>
       </ScrollView>
     </Animated.View>
