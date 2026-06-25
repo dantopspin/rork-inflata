@@ -156,16 +156,16 @@ export function painLabel(score: number): string {
 export function confidence(scans: Scan[], stats: ItemStat[]): Confidence {
   const real = realScans(scans).length;
   const tracked = stats.length;
-  if (real >= 8 && tracked >= 30) return { level: "high", label: "High confidence" };
+  if (real >= 8 && tracked >= 30) return { level: "high", label: "VERIFIED DATA" };
   if (real >= 3 && tracked >= 10)
-    return { level: "medium", label: "Building confidence — keep scanning" };
-  return { level: "low", label: "Preliminary — based on your baseline setup" };
+    return { level: "medium", label: "BUILDING INSIGHTS" };
+  return { level: "low", label: "GATHERING INTELLIGENCE" };
 }
 
 export function itemConfidence(stat: ItemStat): Confidence {
-  if (stat.realAppearances >= 4) return { level: "high", label: "High confidence" };
-  if (stat.realAppearances >= 2) return { level: "medium", label: "Building confidence" };
-  return { level: "low", label: "Preliminary — based on your baseline" };
+  if (stat.realAppearances >= 4) return { level: "high", label: "VERIFIED DATA" };
+  if (stat.realAppearances >= 2) return { level: "medium", label: "BUILDING INSIGHTS" };
+  return { level: "low", label: "GATHERING INTELLIGENCE" };
 }
 
 export function totalSpendBaselineVsCurrent(stats: ItemStat[]): number {
