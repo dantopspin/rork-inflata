@@ -2,6 +2,16 @@
 // Strips weights, volumes, store prefixes, and modifiers so the same product
 // across receipts is recognized as one.
 
+/**
+ * Compute the canonical unit price (price per base unit).
+ * Returns null when quantity is zero, missing, or non-positive — callers
+ * should skip those entries gracefully rather than crashing.
+ */
+export function computeUnitPrice(price: number, quantity: number): number | null {
+  if (!Number.isFinite(price) || !Number.isFinite(quantity) || quantity <= 0) return null;
+  return price / quantity;
+}
+
 const ABBREV: Record<string, string> = {
   ORG: "ORGANIC",
   LG: "LARGE",

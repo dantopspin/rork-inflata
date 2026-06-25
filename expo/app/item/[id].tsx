@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Platform } from "react-native";
-import { ArrowLeft, ArrowRight, Lock, MapPin, Share2, Shuffle, TrendingUp } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Lock, MapPin, Ruler, Share2, Shuffle, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,7 +13,7 @@ import { Sparkline } from "@/components/Sparkline";
 import { captureAndShare } from "@/lib/share";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtDate, fmtDateLong, fmtPct, fmtUSD } from "@/lib/format";
-import { aggregateItems, itemConfidence, withOverspend } from "@/lib/inflation";
+import { aggregateItems, detectShrinkflation, itemConfidence, withOverspend } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 import { View as RNView } from "react-native";
 import { ItemStat } from "@/types";
@@ -89,6 +89,24 @@ export default function ItemDetail() {
     if (!stat?.biggestJumpDate || !stat.history.length) return -1;
     return stat.history.findIndex((h) => h.date === stat.biggestJumpDate);
   }, [stat]);
+
+  // Shrinkflation detection: unit price went up while raw price stayed flat
+  const isShrinkflation = useMemo(() => (stat ? detectShrinkflation(stat) : false), [stat]);
+
+  // Unit price history entries (only those with known quantity)
+  const unitPriceEntries = useMemo(
+    () => stat?.history.filter((h) => h.canonicalUnitPrice != null) ?? [],
+    [stat],
+  );
+
+  // Unit price change percentage (first → last)
+  const unitPriceChange = useMemo(() => {
+    if (unitPriceEntries.length < 2) return null;
+    const first = unitPriceEntries[0].canonicalUnitPrice!;
+    const last = unitPriceEntries[unitPriceEntries.length - 1].canonicalUnitPrice!;
+    if (first <= 0) return null;
+    return ((last - first) / first) * 100;
+  }, [unitPriceEntries]);
 
   if (!hydrated) return <View style={styles.screen} />;
 
@@ -180,6 +198,67 @@ export default function ItemDetail() {
             </Text>
           ) : null}
         </View>
+
+        {/* ===== SHRINKFLATION WARNING ===== */}
+        {isShrinkflation ? (
+          <View style={[styles.card, { marginTop: 24, borderColor: Colors.amber, borderWidth: 1.5 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <AlertTriangle size={14} color={Colors.amber} strokeWidth={2.5} />
+              <Text style={[styles.cardKicker, { color: Colors.amber }]}>
+                SHRINKFLATION DETECTED
+              </Text>
+            </View>
+            <Text style={styles.shrinkBody}>
+              The sticker price for {stat.name} has stayed nearly flat, but the{" "}
+              <Text style={{ fontFamily: Fonts.bold, color: Colors.amber }}>price per unit</Text>{" "}
+              has risen {unitPriceChange != null ? fmtPct(unitPriceChange) : ""}.{" "}
+              You&apos;re paying the same for less product.
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ===== UNIT PRICE TREND ===== */}
+        {unitPriceEntries.length >= 2 ? (
+          <View style={[styles.card, { marginTop: 24 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Ruler size={12} color={Colors.mutedForeground} strokeWidth={2} />
+              <Text style={styles.cardKicker}>PRICE PER UNIT</Text>
+              {stat.unitMeasure ? (
+                <Text style={styles.unitLabel}>per {stat.unitMeasure}</Text>
+              ) : null}
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <Sparkline
+                prices={unitPriceEntries.map((h) => h.canonicalUnitPrice!)}
+                height={72}
+                strokeWidth={2}
+                stroke={Colors.amber}
+              />
+            </View>
+            <View style={styles.firstLatest}>
+              <View>
+                <Text style={styles.flLabel}>FIRST</Text>
+                <Text style={styles.flValue}>
+                  {fmtUSD(unitPriceEntries[0].canonicalUnitPrice!)}
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.flLabel}>LATEST</Text>
+                <Text style={styles.flValue}>
+                  {fmtUSD(unitPriceEntries[unitPriceEntries.length - 1].canonicalUnitPrice!)}
+                </Text>
+              </View>
+            </View>
+            {unitPriceChange != null ? (
+              <Text style={[styles.jump, { marginTop: 10 }]}>
+                Unit price change:{" "}
+                <Text style={{ fontFamily: Fonts.bold, color: unitPriceChange > 0 ? Colors.accent : Colors.success }}>
+                  {fmtPct(unitPriceChange)}
+                </Text>
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Best Price Found At — store-to-store arbitrage */}
         {stat.cheapestPrice !== undefined && stat.cheapestStore ? (
@@ -493,6 +572,20 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   savingsNote: { marginTop: 8, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+
+  /* Shrinkflation warning */
+  shrinkBody: {
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.mutedForeground,
+  },
+  unitLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 0.5,
+    color: Colors.mutedForeground,
+  },
 
   shareBtn: {
     marginTop: 32,

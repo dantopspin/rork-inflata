@@ -5,13 +5,13 @@ const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
 const MODEL = "google/gemini-3.1-flash-lite";
 
-const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Extract the store name from the receipt header and every line item with its price. 
+const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Extract the store name from the receipt header and every line item with its price, quantity, and unit of measure.
 
 Return ONLY valid JSON — no markdown, no explanation:
 {
   "store": "Store Name",
   "items": [
-    { "name": "ITEM NAME", "price": 0.00 }
+    { "name": "ITEM NAME", "price": 0.00, "unit_quantity": 12, "unit_measure": "ct" }
   ]
 }
 
@@ -19,11 +19,13 @@ Rules:
 - Store name: extract from the receipt header/logo. If unknown, use "Unknown Store".
 - Items: every line that has a product name AND a price. Skip tax, totals, subtotals, discounts, and blank lines.
 - Prices: numeric only, no currency symbols. For example 4.99 not "$4.99".
-- Names: clean product names — strip store codes but keep size info (e.g. "Large Eggs 12ct").`;
+- Names: clean product names — strip store codes but keep size info (e.g. "Large Eggs 12ct").
+- unit_quantity: extract the numeric count/size (e.g. 12 for "12ct", 16 for "16oz", 1 for "1 gal"). Omit if no quantity is visible.
+- unit_measure: the unit label found on the line (e.g. "ct", "oz", "lb", "gal", "each"). Omit if no unit is visible.`;
 
 export type OcrResult = {
   store: string;
-  items: { name: string; price: number }[];
+  items: { name: string; price: number; unit_quantity?: number; unit_measure?: string }[];
 };
 
 /**
@@ -98,11 +100,15 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
     throw new Error("OCR response missing store or items");
   }
 
-  // Validate and clean items
+  // Validate and clean items — preserve unit quantity/measure when present
   const items = json.items
     .map((item) => ({
       name: String(item.name ?? "").trim(),
       price: typeof item.price === "string" ? Number.parseFloat(item.price) : Number(item.price ?? 0),
+      unit_quantity: item.unit_quantity != null && Number.isFinite(Number(item.unit_quantity)) && Number(item.unit_quantity) > 0
+        ? Number(item.unit_quantity)
+        : undefined,
+      unit_measure: item.unit_measure ? String(item.unit_measure).trim().toLowerCase() || undefined : undefined,
     }))
     .filter((item) => item.name && Number.isFinite(item.price) && item.price > 0);
 

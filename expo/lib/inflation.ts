@@ -22,19 +22,43 @@ function tripsPerMonth(f: string | null): number {
 }
 
 export function aggregateItems(scans: Scan[]): ItemStat[] {
-  const byKey = new Map<
-    string,
-    { entries: { date: string; price: number; fromBaseline: boolean; name: string; store: string }[] }
-  >();
+  type AgrEntry = {
+    date: string;
+    price: number;
+    fromBaseline: boolean;
+    name: string;
+    store: string;
+    unitQuantity?: number;
+    unitMeasure?: string;
+    canonicalUnitPrice?: number;
+  };
+
+  const byKey = new Map<string, { entries: AgrEntry[] }>();
   for (const s of scans) {
     for (const it of s.items) {
       if (!byKey.has(it.itemKey)) byKey.set(it.itemKey, { entries: [] });
+
+      // Compute canonical unit price when both price and quantity are known.
+      // Guard against zero quantity to prevent NaN / Infinity crashes.
+      let cup: number | undefined;
+      if (
+        it.unitQuantity != null &&
+        Number.isFinite(it.unitQuantity) &&
+        it.unitQuantity > 0 &&
+        Number.isFinite(it.price)
+      ) {
+        cup = it.price / it.unitQuantity;
+      }
+
       byKey.get(it.itemKey)!.entries.push({
         date: s.date,
         price: it.price,
         fromBaseline: s.source === "baseline_estimate",
         name: it.name,
         store: s.store,
+        unitQuantity: it.unitQuantity,
+        unitMeasure: it.unitMeasure,
+        canonicalUnitPrice: cup,
       });
     }
   }
@@ -78,6 +102,14 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
     const lastDate = new Date(last.date).getTime();
     const lastSeenDays = (Date.now() - lastDate) / (1000 * 60 * 60 * 24);
 
+    // Total amount spent on this item across all real (non-baseline) scans
+    const totalSpend = entries
+      .filter((e) => !e.fromBaseline)
+      .reduce((sum, e) => sum + e.price, 0);
+
+    // Most recent entry that has a canonical unit price
+    const lastUnitEntry = [...entries].reverse().find((e) => e.canonicalUnitPrice != null);
+
     stats.push({
       key,
       name: last.name,
@@ -97,11 +129,16 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       cheapestStore: cheapestStore || undefined,
       volatility,
       lastSeenDays,
+      canonicalUnitPrice: lastUnitEntry?.canonicalUnitPrice,
+      unitQuantity: lastUnitEntry?.unitQuantity,
+      unitMeasure: lastUnitEntry?.unitMeasure,
+      totalSpend,
       history: entries.map((e) => ({
         date: e.date,
         price: e.price,
         fromBaseline: e.fromBaseline,
         store: e.store,
+        canonicalUnitPrice: e.canonicalUnitPrice,
       })),
     });
   }
@@ -145,11 +182,23 @@ export function withOverspend(stats: ItemStat[], frequency: string | null): Item
   });
 }
 
+/**
+ * Spend-weighted personal inflation rate.
+ * Each item's impact on the total is proportional to its share of the user's
+ * total real spend — steak at $50/mo matters 10x more than apples at $5/mo.
+ * Falls back to appearance-weighted when there is no real spend data.
+ */
 export function inflationScore(stats: ItemStat[]): number {
   if (!stats.length) return 0;
+  const totalSpend = stats.reduce((acc, s) => acc + s.totalSpend, 0);
+  if (totalSpend > 0) {
+    const weighted = stats.reduce((acc, s) => acc + s.pctChange * s.totalSpend, 0);
+    return weighted / totalSpend;
+  }
+  // Fallback: appearance-weighted for baseline-only items
   const weighted = stats.reduce((acc, s) => acc + s.pctChange * Math.max(1, s.appearances), 0);
   const weight = stats.reduce((acc, s) => acc + Math.max(1, s.appearances), 0);
-  return weighted / weight;
+  return weight ? weighted / weight : 0;
 }
 
 export function painIndex(stats: ItemStat[], totalSpendDelta: number): number {
@@ -256,6 +305,21 @@ export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStr
 
       return { key: s.key, name: s.name, pctChange: s.pctChange, action, store, volatility: s.volatility };
     });
+}
+
+/**
+ * Detect shrinkflation: the raw price stayed flat (within 2%) while the
+ * unit price rose more than 5%. This means you're paying the same for less.
+ */
+export function detectShrinkflation(stat: ItemStat): boolean {
+  const unitEntries = stat.history.filter((h) => h.canonicalUnitPrice != null);
+  if (unitEntries.length < 2) return false;
+  const first = unitEntries[0];
+  const last = unitEntries[unitEntries.length - 1];
+  if (first.price <= 0 || first.canonicalUnitPrice! <= 0) return false;
+  const rawChange = (last.price - first.price) / first.price;
+  const unitChange = (last.canonicalUnitPrice! - first.canonicalUnitPrice!) / first.canonicalUnitPrice!;
+  return Math.abs(rawChange) < 0.02 && unitChange > 0.05;
 }
 
 /** Check whether an item had a price spike >10% within the last 14 days. */

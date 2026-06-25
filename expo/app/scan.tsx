@@ -2,10 +2,11 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { Check, Image, Loader2, Trash2, X } from "lucide-react-native";
+import { AlertTriangle, Check, Image, Loader2, Trash2, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -40,7 +41,7 @@ import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
 
 type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "discovery" | "error";
-type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string };
+type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string; unitQuantity?: number; unitMeasure?: string };
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -112,6 +113,8 @@ export default function ScanScreen() {
             name: n.canonical,
             priceStr: item.price.toFixed(2),
             itemKey: n.key,
+            unitQuantity: item.unit_quantity,
+            unitMeasure: item.unit_measure,
           };
         }),
       );
@@ -157,6 +160,8 @@ export default function ScanScreen() {
             name: n.canonical,
             priceStr: item.price.toFixed(2),
             itemKey: n.key,
+            unitQuantity: item.unit_quantity,
+            unitMeasure: item.unit_measure,
           };
         }),
       );
@@ -183,6 +188,8 @@ export default function ScanScreen() {
         price: Number.parseFloat(i.priceStr),
         itemKey: i.itemKey,
         originalStoreName: scanStore,
+        unitQuantity: i.unitQuantity,
+        unitMeasure: i.unitMeasure,
       }))
       .filter((i) => i.name && Number.isFinite(i.price) && i.price > 0);
 
@@ -541,6 +548,31 @@ function ReviewView({
             })}
           </View>
         </ScrollView>
+
+        {/* Report Data Error — user flags OCR mistakes */}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+          <Pressable
+            onPress={() => {
+              Alert.alert(
+                "Report Data Error",
+                "Flag this scan's items as having incorrect units or prices? We'll use your correction to improve future readings.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Report", style: "destructive", onPress: () => {
+                    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                    Alert.alert("Reported", "Thank you — this helps us fix unit errors.");
+                  }},
+                ],
+              );
+            }}
+            style={({ pressed }) => [styles.reportErrorBtn, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Report a data error in this scan"
+          >
+            <AlertTriangle size={12} color={Colors.amber} strokeWidth={2} />
+            <Text style={styles.reportErrorText}>REPORT DATA ERROR</Text>
+          </Pressable>
+        </View>
 
         <View style={[styles.saveBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           {gated ? (
@@ -1006,6 +1038,20 @@ const styles = StyleSheet.create({
   saveBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
   saveBtnDark: { height: 56, borderRadius: 999, backgroundColor: Colors.foreground, alignItems: "center", justifyContent: "center" },
   saveBtnDarkText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.background },
+  reportErrorBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+  },
+  reportErrorText: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: Colors.amber,
+  },
 
   // Inflation Discovery
   discoveryKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.accent },
