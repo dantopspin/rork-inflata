@@ -12,8 +12,10 @@ import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtDate, fmtDateLong, fmtPct, fmtUSD } from "@/lib/format";
 import {
   aggregateItems,
+  averageBasketSize,
   confidence,
   inflationScore,
+  nextTripEstimate,
   painIndex,
   painLabel,
   realScanCount,
@@ -40,6 +42,9 @@ export default function Dashboard() {
   const totalDelta = useMemo(() => totalSpendBaselineVsCurrent(stats), [stats]);
   const pain = useMemo(() => painIndex(stats, totalDelta), [stats, totalDelta]);
   const conf = useMemo(() => confidence(scans, stats), [scans, stats]);
+
+  const tripEstimate = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
+  const avgBasket = useMemo(() => averageBasketSize(scans), [scans]);
 
   const worst = useMemo(() => [...stats].sort((a, b) => b.pctChange - a.pctChange)[0], [stats]);
   const hallOfShame = useMemo(
@@ -93,7 +98,14 @@ export default function Dashboard() {
         {/* Inflation Score */}
         <Animated.View entering={FadeInDown.duration(400)} style={{ paddingHorizontal: 22 }} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
           <Text style={styles.kicker}>YOUR INFLATION</Text>
-          <Text style={styles.bigScore}>{fmtPct(inflation)}</Text>
+          <View style={{ position: "relative" }}>
+            <Text style={styles.bigScore}>{fmtPct(inflation)}</Text>
+            {conf.level === "low" ? (
+              <View style={styles.needsDataOverlay} pointerEvents="none">
+                <Text style={styles.needsDataText}>NEEDS MORE DATA</Text>
+              </View>
+            ) : null}
+          </View>
           <View style={styles.confRow}>
             <ConfidenceBadge c={conf} />
           </View>
@@ -184,7 +196,7 @@ export default function Dashboard() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.hosName}>{it.name}</Text>
-                    <Text style={styles.subtleSmall}>+{fmtUSD(it.cumulativeOverspend)} extra this year</Text>
+                    <Text style={styles.subtleSmall}>+{fmtUSD(it.cumulativeOverspend)} extra this month</Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
                     <Text style={styles.hosPct}>{fmtPct(it.pctChange)}</Text>
@@ -209,8 +221,19 @@ export default function Dashboard() {
           </Animated.View>
         ) : null}
 
+        {/* Next Trip Estimate */}
+        {tripEstimate > 0 && avgBasket > 0 ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(320)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel={`Next trip estimated at ${fmtUSD(tripEstimate)}, based on your average basket of ${fmtUSD(avgBasket)}`}>
+            <Text style={styles.kicker}>NEXT TRIP ESTIMATE</Text>
+            <Text style={styles.estimateValue}>{fmtUSD(tripEstimate)}</Text>
+            <Text style={styles.subtleSmall}>
+              Your avg basket ({fmtUSD(avgBasket)}) × personal inflation rate
+            </Text>
+          </Animated.View>
+        ) : null}
+
         {/* Recent evidence — button to open modal */}
-        <Animated.View entering={FadeInDown.duration(400).delay(320)} style={[styles.section, { marginHorizontal: 24 }]}>
+        <Animated.View entering={FadeInDown.duration(400).delay(380)} style={[styles.section, { marginHorizontal: 24 }]}>
           <Pressable
             onPress={() => setEvidenceOpen(true)}
             style={({ pressed }) => [styles.evidenceTrigger, pressed && { backgroundColor: Colors.muted }]}
@@ -333,7 +356,7 @@ function EmptyState() {
         {([
           ["Real Cost", "We track what it actually cost you.", () => <CircleDollarSign size={18} color={Colors.accent} strokeWidth={1.8} />],
           ["Real You", "Compared only to your own history.", () => <Hash size={18} color={Colors.accent} strokeWidth={1.8} />],
-          ["On-Device", "Receipts never leave your phone.", () => <Lock size={18} color={Colors.accent} strokeWidth={1.8} />],
+          ["Secure AI", "Images are processed securely via AI", () => <Lock size={18} color={Colors.accent} strokeWidth={1.8} />],
         ] as const).map(([title, body, renderIcon]) => {
           const cardContent = (
             <View style={styles.featureCard}>
@@ -500,6 +523,24 @@ const styles = StyleSheet.create({
   featureCardOuter: { flex: 1, borderRadius: Radius.lg, overflow: "hidden", borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   featureCardTitle: { marginTop: 10, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1, color: Colors.accent },
   featureCardBody: { marginTop: 6, fontSize: 13, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+  needsDataOverlay: {
+    position: "absolute",
+    right: 0,
+    top: 8,
+    backgroundColor: Colors.amberSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  needsDataText: { fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.8, color: Colors.amber },
+  estimateValue: {
+    marginTop: 4,
+    fontFamily: Fonts.extrabold,
+    fontSize: 38,
+    letterSpacing: -1.5,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
 });
 
 const modalStyles = StyleSheet.create({

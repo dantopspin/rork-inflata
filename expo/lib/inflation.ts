@@ -15,10 +15,16 @@ export function freqPurchasesPerYear(f: string | null): number {
   return (FREQ_PER_MONTH[f] ?? 4) * 12;
 }
 
+/** Compute trips per month from the user's declared shopping frequency. */
+function tripsPerMonth(f: string | null): number {
+  if (!f) return 4;
+  return FREQ_PER_MONTH[f] ?? 4;
+}
+
 export function aggregateItems(scans: Scan[]): ItemStat[] {
   const byKey = new Map<
     string,
-    { entries: { date: string; price: number; fromBaseline: boolean; name: string }[] }
+    { entries: { date: string; price: number; fromBaseline: boolean; name: string; store: string }[] }
   >();
   for (const s of scans) {
     for (const it of s.items) {
@@ -28,6 +34,7 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
         price: it.price,
         fromBaseline: s.source === "baseline_estimate",
         name: it.name,
+        store: s.store,
       });
     }
   }
@@ -51,6 +58,17 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       }
     }
     const pct = ((last.price - first.price) / first.price) * 100;
+
+    // Track cheapest price and store across all history (store-to-store arbitrage)
+    let cheapestPrice = Infinity;
+    let cheapestStore = "";
+    for (const e of entries) {
+      if (e.price < cheapestPrice) {
+        cheapestPrice = e.price;
+        cheapestStore = e.store;
+      }
+    }
+
     stats.push({
       key,
       name: last.name,
@@ -66,18 +84,50 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       cumulativeOverspend: 0, // filled below
       biggestJumpDate,
       biggestJumpPct,
-      history: entries.map((e) => ({ date: e.date, price: e.price, fromBaseline: e.fromBaseline })),
+      cheapestPrice: cheapestPrice < Infinity ? cheapestPrice : undefined,
+      cheapestStore: cheapestStore || undefined,
+      history: entries.map((e) => ({
+        date: e.date,
+        price: e.price,
+        fromBaseline: e.fromBaseline,
+        store: e.store,
+      })),
     });
   }
   return stats;
 }
 
+/**
+ * 30-day "Tax on your Wallet" — based on the price delta between
+ * the last two real scans for each item, projected to a 30-day window.
+ * More believable than a 6-month straight-line extrapolation.
+ */
 export function withOverspend(stats: ItemStat[], frequency: string | null): ItemStat[] {
-  const perYear = freqPurchasesPerYear(frequency);
+  const tpm = tripsPerMonth(frequency);
+  // Average days between trips
+  const avgDaysBetween = tpm > 0 ? 30 / tpm : 7;
+
   return stats.map((s) => {
-    // Heuristic: an item's purchase frequency ≈ trips/year × (its appearance rate)
-    const overspendPerYear = Math.max(0, s.dollarChange) * (perYear / Math.max(4, perYear / 2));
-    return { ...s, cumulativeOverspend: (overspendPerYear / 12) * 6 }; // approx 6-month projection
+    // Find the last two real-scan entries (non-baseline)
+    const realEntries = s.history.filter((h) => !h.fromBaseline);
+    if (realEntries.length < 2) {
+      return { ...s, cumulativeOverspend: 0 };
+    }
+
+    const penultimate = realEntries[realEntries.length - 2];
+    const latest = realEntries[realEntries.length - 1];
+
+    const delta = latest.price - penultimate.price;
+    if (delta <= 0) return { ...s, cumulativeOverspend: 0 };
+
+    // Project the price increase to a 30-day window
+    const daysBetween =
+      (new Date(latest.date).getTime() - new Date(penultimate.date).getTime()) /
+      (1000 * 60 * 60 * 24);
+    const effectiveDays = Math.max(daysBetween, avgDaysBetween);
+
+    const tax30 = delta * (30 / effectiveDays);
+    return { ...s, cumulativeOverspend: Math.round(tax30 * 100) / 100 };
   });
 }
 
@@ -120,4 +170,20 @@ export function itemConfidence(stat: ItemStat): Confidence {
 
 export function totalSpendBaselineVsCurrent(stats: ItemStat[]): number {
   return stats.reduce((acc, s) => acc + Math.max(0, s.dollarChange), 0);
+}
+
+/** Average spend per trip across all real scans. */
+export function averageBasketSize(scans: Scan[]): number {
+  const real = realScans(scans);
+  if (!real.length) return 0;
+  const total = real.reduce((acc, s) => acc + s.items.reduce((sum, it) => sum + it.price, 0), 0);
+  return total / real.length;
+}
+
+/** Predict the user's next trip cost: avg basket × (1 + personal inflation rate). */
+export function nextTripEstimate(scans: Scan[], stats: ItemStat[]): number {
+  const avg = averageBasketSize(scans);
+  if (!avg) return 0;
+  const infl = inflationScore(stats);
+  return avg * (1 + Math.max(0, infl) / 100);
 }

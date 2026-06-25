@@ -39,7 +39,7 @@ import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
 
 type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "error";
-type Editable = { id: string; rawName: string; name: string; priceStr: string };
+type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string };
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -58,7 +58,22 @@ export default function ScanScreen() {
 
   const hardGate = !subscribed && realCount + 1 > FREE_HARD_GATE_AT;
 
+  // Prior price averages for rip-off guardrail (per itemKey)
+  const priorAvgPrice = (() => {
+    const m = new Map<string, { total: number; count: number }>();
+    for (const s of scans) for (const it of s.items) {
+      const e = m.get(it.itemKey) ?? { total: 0, count: 0 };
+      e.total += it.price;
+      e.count += 1;
+      m.set(it.itemKey, e);
+    }
+    const avg = new Map<string, number>();
+    for (const [k, v] of m) avg.set(k, v.total / v.count);
+    return avg;
+  })();
+
   const pickFromGallery = async () => {
+    if (hardGate) { setPaywall(true); return; }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) return;
     try {
@@ -76,12 +91,16 @@ export default function ScanScreen() {
       const scanResult = await scanReceipt(uri);
       setStore(scanResult.store);
       setItems(
-        scanResult.items.map((item) => ({
-          id: uuid(),
-          rawName: item.name.toUpperCase(),
-          name: normalize(item.name).canonical,
-          priceStr: item.price.toFixed(2),
-        })),
+        scanResult.items.map((item) => {
+          const n = normalize(item.name);
+          return {
+            id: uuid(),
+            rawName: item.name.toUpperCase(),
+            name: n.canonical,
+            priceStr: item.price.toFixed(2),
+            itemKey: n.key,
+          };
+        }),
       );
       setStage("review");
     } catch (err) {
@@ -103,6 +122,7 @@ export default function ScanScreen() {
 
   const handleCapture = async () => {
     if (!cameraRef.current) return;
+    if (hardGate) { setPaywall(true); return; }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
@@ -115,12 +135,16 @@ export default function ScanScreen() {
       const result = await scanReceipt(photo.uri);
       setStore(result.store);
       setItems(
-        result.items.map((item) => ({
-          id: uuid(),
-          rawName: item.name.toUpperCase(),
-          name: normalize(item.name).canonical,
-          priceStr: item.price.toFixed(2),
-        })),
+        result.items.map((item) => {
+          const n = normalize(item.name);
+          return {
+            id: uuid(),
+            rawName: item.name.toUpperCase(),
+            name: n.canonical,
+            priceStr: item.price.toFixed(2),
+            itemKey: n.key,
+          };
+        }),
       );
       setStage("review");
     } catch (err) {
@@ -136,16 +160,12 @@ export default function ScanScreen() {
   };
 
   const save = () => {
-    if (hardGate && !subscribed) {
-      setPaywall(true);
-      return;
-    }
     const cleaned = items
       .map((i) => ({
         rawName: i.rawName,
         name: i.name.trim(),
         price: Number.parseFloat(i.priceStr),
-        itemKey: normalize(i.name || i.rawName).key,
+        itemKey: i.itemKey,
       }))
       .filter((i) => i.name && Number.isFinite(i.price) && i.price > 0);
 
@@ -265,7 +285,7 @@ export default function ScanScreen() {
               <View style={{ width: 56 }} />
             </View>
           ) : null}
-          <Text style={styles.shutterNote}>Receipts stay on your device. Always.</Text>
+          <Text style={styles.shutterNote}>Images are processed securely via AI</Text>
         </Animated.View>
       ) : null}
 
@@ -311,6 +331,7 @@ export default function ScanScreen() {
           onSave={save}
           gated={hardGate && !subscribed}
           onUpgrade={() => setPaywall(true)}
+          priorAvgPrice={priorAvgPrice}
         />
       ) : null}
 
@@ -350,6 +371,7 @@ function ReviewView({
   onSave,
   gated,
   onUpgrade,
+  priorAvgPrice,
 }: {
   insets: { top: number; bottom: number };
   store: string;
@@ -363,6 +385,7 @@ function ReviewView({
   onSave: () => void;
   gated: boolean;
   onUpgrade: () => void;
+  priorAvgPrice: Map<string, number>;
 }) {
   return (
     <Animated.View entering={SlideInUp.springify().dampingRatio(0.7)} style={styles.reviewSheet}>
@@ -400,7 +423,11 @@ function ReviewView({
           </TouchableWithoutFeedback>
 
           <View style={{ marginTop: 8 }}>
-            {items.map((it) => (
+            {items.map((it) => {
+              const price = Number.parseFloat(it.priceStr);
+              const avg = priorAvgPrice.get(it.itemKey);
+              const isSpike = avg !== undefined && avg > 0 && price > avg * 1.1;
+              return (
               <SwipeRow key={it.id} onDelete={() => deleteOne(it.id)}>
                 <View style={styles.itemRow}>
                   <Pressable
@@ -436,14 +463,21 @@ function ReviewView({
                         }
                         keyboardType="decimal-pad"
                         returnKeyType="done"
-                        style={styles.priceInput}
+                        style={[styles.priceInput, isSpike && styles.priceInputSpike]}
                       />
                     </View>
-                    <Text style={styles.ocrLabel}>AI read: {it.rawName}</Text>
+                    {isSpike ? (
+                      <Text style={styles.spikeWarn}>
+                        PRICE SPIKE — {avg ? `${((price - avg) / avg * 100).toFixed(0)}%` : ""} above your avg of {avg ? `$${avg.toFixed(2)}` : "N/A"}
+                      </Text>
+                    ) : (
+                      <Text style={styles.ocrLabel}>AI read: {it.rawName}</Text>
+                    )}
                   </View>
                 </View>
               </SwipeRow>
-            ))}
+              );
+            })}
           </View>
         </ScrollView>
 
@@ -673,6 +707,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.foreground,
   },
+  priceInputSpike: {
+    backgroundColor: "rgba(229,53,53,0.12)",
+    color: Colors.destructive,
+  },
+  spikeWarn: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.destructive },
   ocrLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: "rgba(115,115,115,0.7)" },
   saveBar: {
     position: "absolute",

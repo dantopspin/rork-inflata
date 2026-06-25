@@ -37,5 +37,7 @@ export type ItemStat = {
   cumulativeOverspend: number;
   biggestJumpDate?: string;
   biggestJumpPct?: number;
-  history: { date: string; price: number; fromBaseline: boolean }[];
+  cheapestPrice?: number;
+  cheapestStore?: string;
+  history: { date: string; price: number; fromBaseline: boolean; store: string }[];
 };

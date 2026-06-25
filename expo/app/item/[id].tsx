@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, Lock, Share2 } from "lucide-react-native";
+import { ArrowLeft, Lock, MapPin, Share2 } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -61,7 +61,7 @@ export default function ItemDetail() {
         </Text>
         <Text style={styles.pocket}>
           That&apos;s <Text style={styles.bold}>{fmtUSD(stat.cumulativeOverspend)}</Text> more out of
-          your pocket in the last 6 months.
+          your pocket projected over the next 30 days.
         </Text>
 
         <View style={{ marginTop: 16, gap: 8 }}>
@@ -94,6 +94,24 @@ export default function ItemDetail() {
             </Text>
           ) : null}
         </View>
+
+        {/* Best Price Found At — store-to-store arbitrage */}
+        {stat.cheapestPrice !== undefined && stat.cheapestStore ? (
+          <View style={[styles.card, { marginTop: 24 }]}>
+            <Text style={styles.cardKicker}>BEST PRICE FOUND AT</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 }}>
+              <MapPin size={14} color={Colors.accent} strokeWidth={1.8} />
+              <Text style={styles.cheapestLabel}>{stat.cheapestStore}</Text>
+            </View>
+            <Text style={styles.cheapestPrice}>{fmtUSD(stat.cheapestPrice)}</Text>
+            {stat.cheapestPrice < stat.currentPrice ? (
+              <Text style={styles.savingsNote}>
+                You&apos;re paying {fmtUSD(stat.currentPrice - stat.cheapestPrice)} more at your current store —{" "}
+                that&apos;s {((stat.currentPrice - stat.cheapestPrice) / stat.cheapestPrice * 100).toFixed(0)}% above the best price found.
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={{ marginTop: 32 }}>
           <Text style={styles.cardKicker}>ALL RECORDED PRICES</Text>
@@ -206,4 +224,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   lockBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.foreground },
+  cheapestLabel: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  cheapestPrice: {
+    marginTop: 6,
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    letterSpacing: -0.8,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  savingsNote: { marginTop: 8, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
 });
