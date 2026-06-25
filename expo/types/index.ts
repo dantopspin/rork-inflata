@@ -41,3 +41,12 @@ export type ItemStat = {
   cheapestStore?: string;
   history: { date: string; price: number; fromBaseline: boolean; store: string }[];
 };
+
+export type TripStrategyItem = {
+  key: string;
+  name: string;
+  pctChange: number;
+  action: "buy_at" | "wait" | "stock_up" | "as_planned";
+  store: string;
+  volatility: number;
+};

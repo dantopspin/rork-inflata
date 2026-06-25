@@ -1,4 +1,4 @@
-import { Scan, ItemStat, Confidence } from "@/types";
+import { Scan, ItemStat, Confidence, TripStrategyItem } from "@/types";
 
 const FREQ_PER_MONTH: Record<string, number> = {
   "multi-week": 8,
@@ -186,4 +186,76 @@ export function nextTripEstimate(scans: Scan[], stats: ItemStat[]): number {
   if (!avg) return 0;
   const infl = inflationScore(stats);
   return avg * (1 + Math.max(0, infl) / 100);
+}
+
+/** Weekly burn rate: total 30-day tax projection scaled to 7 days. */
+export function weeklyBurnRate(stats: ItemStat[]): number {
+  const total30 = stats.reduce((acc, s) => acc + s.cumulativeOverspend, 0);
+  return total30 * (7 / 30);
+}
+
+/** Weekly savings if every Hall-of-Shame item were bought at its cheapest store. */
+export function savingsFound(stats: ItemStat[], frequency: string | null): number {
+  return stats
+    .filter((s) => s.pctChange > 0 && s.cheapestPrice != null && s.cheapestPrice < s.currentPrice)
+    .reduce((acc, s) => {
+      const perItem = s.currentPrice - s.cheapestPrice!;
+      const yearlyFreq = freqPurchasesPerYear(frequency);
+      return acc + (perItem * yearlyFreq) / 52;
+    }, 0);
+}
+
+/**
+ * Next Trip Strategy: top 3 items with the highest frequency×volatility score.
+ * Items with rising prices are flagged as "buy_at" (if a cheaper store exists) or
+ * "wait" (if no cheaper alternative). Dropping items get "stock_up".
+ */
+export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStrategyItem[] {
+  if (!stats.length) return [];
+
+  return stats
+    .filter((s) => s.appearances >= 2)
+    .sort((a, b) => {
+      const scoreA = a.appearances * Math.abs(a.pctChange);
+      const scoreB = b.appearances * Math.abs(b.pctChange);
+      return scoreB - scoreA;
+    })
+    .slice(0, 3)
+    .map((s): TripStrategyItem => {
+      const vol = Math.abs(s.pctChange);
+      let action: TripStrategyItem["action"] = "as_planned";
+      let store = "";
+
+      if (s.pctChange > 5) {
+        if (s.cheapestStore && s.cheapestPrice != null && s.cheapestPrice < s.currentPrice) {
+          action = "buy_at";
+          store = s.cheapestStore;
+        } else {
+          action = "wait";
+        }
+      } else if (s.pctChange < -5) {
+        action = "stock_up";
+        store = s.history[s.history.length - 1]?.store ?? "";
+      }
+
+      return { key: s.key, name: s.name, pctChange: s.pctChange, action, store, volatility: vol };
+    });
+}
+
+/** Check whether an item had a price spike >10% within the last 14 days. */
+export function hasRecentSpike(stat: ItemStat): boolean {
+  const now = Date.now();
+  const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+
+  for (let i = 1; i < stat.history.length; i++) {
+    const entryMs = new Date(stat.history[i].date).getTime();
+    if (entryMs >= fourteenDaysAgo) {
+      const prev = stat.history[i - 1].price;
+      const cur = stat.history[i].price;
+      if (prev > 0 && ((cur - prev) / prev) * 100 > 10) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

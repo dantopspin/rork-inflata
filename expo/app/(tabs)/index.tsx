@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Share2, X } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Share2, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
@@ -14,23 +14,17 @@ import {
   aggregateItems,
   averageBasketSize,
   confidence,
+  hasRecentSpike,
   inflationScore,
   nextTripEstimate,
-  painIndex,
-  painLabel,
+  nextTripStrategyItems,
   realScanCount,
+  savingsFound,
   totalSpendBaselineVsCurrent,
+  weeklyBurnRate,
   withOverspend,
 } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
-
-/** Returns a dynamic color for the pain index track: green → amber → red-orange */
-function painColor(score: number): string {
-  if (score <= 25) return "#22C55E";
-  if (score <= 50) return "#EAB308";
-  if (score <= 75) return "#F97316";
-  return Colors.accent;
-}
 
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
@@ -40,9 +34,9 @@ export default function Dashboard() {
   const stats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
   const inflation = useMemo(() => inflationScore(stats), [stats]);
   const totalDelta = useMemo(() => totalSpendBaselineVsCurrent(stats), [stats]);
-  const pain = useMemo(() => painIndex(stats, totalDelta), [stats, totalDelta]);
   const conf = useMemo(() => confidence(scans, stats), [scans, stats]);
-
+  const weeklyBurn = useMemo(() => weeklyBurnRate(stats), [stats]);
+  const savings = useMemo(() => savingsFound(stats, frequency), [stats, frequency]);
   const tripEstimate = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
   const avgBasket = useMemo(() => averageBasketSize(scans), [scans]);
 
@@ -51,6 +45,7 @@ export default function Dashboard() {
     () => [...stats].filter((s) => s.pctChange > 0).sort((a, b) => b.pctChange - a.pctChange).slice(0, 3),
     [stats],
   );
+  const strategyItems = useMemo(() => nextTripStrategyItems(scans, stats), [scans, stats]);
   const recentScans = useMemo(
     () =>
       [...scans]
@@ -70,6 +65,7 @@ export default function Dashboard() {
     const real = scans.filter((s) => s.source === "scan").map((s) => s.date).sort();
     return real[0];
   }, [scans]);
+  const showPriceAlert = worst ? hasRecentSpike(worst) : false;
 
   const [paywall, setPaywall] = useState<boolean>(false);
   const [evidenceOpen, setEvidenceOpen] = useState<boolean>(false);
@@ -91,83 +87,161 @@ export default function Dashboard() {
     <View style={styles.screen}>
       <Header />
       <ScrollView
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}
         accessibilityLabel="Dashboard"
       >
-        {/* Inflation Score */}
-        <Animated.View entering={FadeInDown.duration(400)} style={{ paddingHorizontal: 22 }} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
-          <Text style={styles.kicker}>YOUR INFLATION</Text>
-          <View style={{ position: "relative" }}>
-            <Text style={styles.bigScore}>{fmtPct(inflation)}</Text>
-            {conf.level === "low" ? (
-              <View style={styles.needsDataOverlay} pointerEvents="none">
-                <Text style={styles.needsDataText}>NEEDS MORE DATA</Text>
+        {/* ===== HERO METRIC CARD ===== */}
+        <Animated.View entering={FadeInDown.duration(400)} style={{ paddingHorizontal: 22 }}>
+          {conf.level === "low" ? (
+            /* Trust Banner — Gathering Intelligence */
+            <View style={styles.heroCard} accessibilityLabel={`Gathering intelligence. ${3 - realCount} more scans needed to unlock your accurate inflation score.`}>
+              <View style={styles.heroTopRow}>
+                <Zap size={18} color={Colors.accent} strokeWidth={1.8} />
+                <Text style={styles.heroKicker}>GATHERING INTELLIGENCE</Text>
               </View>
-            ) : null}
-          </View>
-          <View style={styles.confRow}>
-            <ConfidenceBadge c={conf} />
-          </View>
-          <Text style={styles.subtle}>
-            Based on {realCount} {realCount === 1 ? "scan" : "scans"}
-            {firstScanDate ? ` since ${fmtDate(firstScanDate)}` : ""}.
-          </Text>
-        </Animated.View>
-
-        {/* Pain Index */}
-        <Animated.View entering={FadeInDown.duration(400).delay(80)} style={[styles.section, { marginHorizontal: 22 }]} accessibilityLabel={`Grocery pain index: ${pain} out of 100. ${painLabel(pain)}`}>
-          <View style={styles.painHead}>
-            <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={styles.kicker}>GROCERY PAIN INDEX</Text>
-              <Text style={styles.painLabel}>{painLabel(pain)}</Text>
+              <Text style={styles.trustTitle}>Building Your{"\n"}Inflation Profile</Text>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${Math.min(100, (realCount / 3) * 100)}%` }]} />
+              </View>
+              <Text style={styles.trustSub}>
+                Scan <Text style={styles.trustBold}>{Math.max(0, 3 - realCount)} more receipt{3 - realCount !== 1 ? "s" : ""}</Text> to unlock your accurate Inflation Score
+              </Text>
             </View>
-            <Text style={styles.painValue}>
-              {pain}
-              <Text style={styles.painOutOf}>/100</Text>
-            </Text>
-          </View>
-          <View style={styles.track}>
-            <View style={[styles.trackFill, { width: `${pain}%`, backgroundColor: painColor(pain) }]} />
-          </View>
-          <View style={{ marginTop: 12 }}>
-            <ConfidenceBadge c={conf} />
-          </View>
+          ) : (
+            /* Hero Metric — Weekly Burn */
+            <View style={styles.heroCard} accessibilityLabel={`Weekly burn rate ${fmtUSD(weeklyBurn)}. Inflation rate ${fmtPct(inflation)}.`}>
+              <View style={styles.heroTopRow}>
+                <TrendingUp size={16} color={Colors.accent} strokeWidth={2} />
+                <Text style={styles.heroKicker}>WEEKLY BURN RATE</Text>
+              </View>
+              <Text style={styles.heroDollar}>{fmtUSD(weeklyBurn)}</Text>
+              <View style={styles.heroMetaRow}>
+                <Text style={styles.heroSubPct}>
+                  {fmtPct(inflation)} inflation
+                </Text>
+                <View style={styles.heroDot} />
+                <Text style={styles.heroSubPct}>
+                  {realCount} {realCount === 1 ? "scan" : "scans"}
+                  {firstScanDate ? ` since ${fmtDate(firstScanDate)}` : ""}
+                </Text>
+              </View>
+              <View style={styles.heroDivider} />
+              <View style={styles.heroBottomRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.savingsLabel}>SAVINGS FOUND</Text>
+                  <Text style={styles.savingsValue}>{fmtUSD(savings)}</Text>
+                  <Text style={styles.savingsHint}>if bought at cheapest store</Text>
+                </View>
+                <ConfidenceBadge c={conf} />
+              </View>
+            </View>
+          )}
         </Animated.View>
 
-        {/* Worst Offender */}
-        {worst && worst.pctChange > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={{ marginTop: 28, paddingHorizontal: 24 }}>
+        {/* ===== PRICE ALERT (replaces Worst Offender) ===== */}
+        {worst && showPriceAlert ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(80)} style={{ marginTop: 24, paddingHorizontal: 24 }}>
             <Pressable
               onPress={() => router.push(`/item/${worst.key}`)}
-              style={({ pressed }) => [styles.worst, pressed && { transform: [{ scale: 0.99 }] }]}
+              style={({ pressed }) => [styles.priceAlert, pressed && { transform: [{ scale: 0.99 }] }]}
               accessibilityRole="button"
-              accessibilityLabel={`Worst offender: ${worst.name}, price spike ${fmtPct(worst.pctChange)}`}
+              accessibilityLabel={`Price spike alert: ${worst.name}, ${fmtPct(worst.pctChange)} increase in last 14 days`}
             >
-              <Text style={styles.worstGhost}>GUILTY</Text>
-              <Text style={styles.worstKicker}>WORST OFFENDER</Text>
-              <Text style={styles.worstName}>{worst.name}</Text>
-              <View style={styles.worstGrid}>
+              <View style={styles.priceAlertBanner}>
+                <AlertTriangle size={16} color={Colors.accent} strokeWidth={2} />
+                <Text style={styles.priceAlertBannerText}>PRICE SPIKE ALERT — LAST 14 DAYS</Text>
+              </View>
+              <Text style={styles.priceAlertName}>{worst.name}</Text>
+              <View style={styles.priceAlertGrid}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.worstStatLabel}>PRICE SPIKE</Text>
-                  <Text style={styles.worstStat}>{fmtPct(worst.pctChange)}</Text>
+                  <Text style={styles.priceAlertStatLabel}>SPIKE</Text>
+                  <Text style={styles.priceAlertStat}>{fmtPct(worst.biggestJumpPct ?? worst.pctChange)}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.worstStatLabel}>OUT OF POCKET</Text>
-                  <Text style={styles.worstStat}>+{fmtUSD(Math.max(0, worst.dollarChange))}</Text>
+                  <Text style={styles.priceAlertStatLabel}>OUT OF POCKET</Text>
+                  <Text style={styles.priceAlertStat}>+{fmtUSD(Math.max(0, worst.dollarChange))}</Text>
                 </View>
               </View>
-              <View style={styles.worstFooter}>
-                <Text style={styles.worstSince}>
-                  Killing your budget since {fmtDateLong(worst.firstDate)}
+              <View style={styles.priceAlertFooter}>
+                <Text style={styles.priceAlertSince}>
+                  Since {fmtDateLong(worst.firstDate)}
                 </Text>
-                <ArrowRight size={16} color="rgba(255,255,255,0.85)" />
+                <ArrowRight size={16} color={Colors.accent} />
               </View>
             </Pressable>
           </Animated.View>
         ) : null}
 
-        {/* Hall of Shame */}
+        {/* ===== NEXT TRIP STRATEGY or DATA COLLECTION ===== */}
+        {realCount > 3 && strategyItems.length > 0 ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
+            <Text style={styles.kicker}>NEXT TRIP STRATEGY</Text>
+            <View style={{ gap: 10, marginTop: 14 }}>
+              {strategyItems.map((item) => {
+                const isBuyAt = item.action === "buy_at";
+                const isWait = item.action === "wait";
+                const isStockUp = item.action === "stock_up";
+
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => router.push(`/item/${item.key}`)}
+                    style={({ pressed }) => [styles.strategyRow, pressed && { backgroundColor: Colors.muted }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.name}: ${isBuyAt ? `Buy at ${item.store}` : isWait ? "Wait for drop" : isStockUp ? `Stock up at ${item.store}` : "Buy as planned"}`}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.strategyName}>{item.name}</Text>
+                      <Text style={styles.strategyVol}>
+                        Volatility: {fmtPct(Math.abs(item.pctChange), false)}
+                      </Text>
+                    </View>
+                    <View style={styles.strategyAction}>
+                      {isBuyAt ? (
+                        <>
+                          <TrendingDown size={11} color={Colors.foreground} strokeWidth={2.5} />
+                          <Text style={styles.strategyActionText}>BUY AT</Text>
+                          <Text style={styles.strategyActionStore}>{item.store.toUpperCase()}</Text>
+                        </>
+                      ) : isWait ? (
+                        <>
+                          <TrendingUp size={11} color={Colors.mutedForeground} strokeWidth={2.5} />
+                          <Text style={[styles.strategyActionText, { color: Colors.mutedForeground }]}>WAIT FOR DROP</Text>
+                        </>
+                      ) : isStockUp ? (
+                        <>
+                          <TrendingDown size={11} color={Colors.foreground} strokeWidth={2.5} />
+                          <Text style={styles.strategyActionText}>STOCK UP</Text>
+                          <Text style={styles.strategyActionStore}>{item.store.toUpperCase()}</Text>
+                        </>
+                      ) : (
+                        <Text style={[styles.strategyActionText, { color: Colors.mutedForeground }]}>AS PLANNED</Text>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Animated.View>
+        ) : realCount <= 3 ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
+            <Text style={styles.kicker}>DATA COLLECTION</Text>
+            <View style={styles.dataCollectionCard}>
+              <View style={styles.progressBarLarge}>
+                <View style={[styles.progressFillLarge, { width: `${Math.min(100, (realCount / 3) * 100)}%` }]} />
+              </View>
+              <Text style={styles.dataCollectionText}>
+                <Text style={styles.trustBold}>{realCount} of 3</Text> scans collected for strategy insights
+              </Text>
+              <Text style={styles.dataCollectionHint}>
+                Scan more receipts to unlock personalized trip planning
+              </Text>
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {/* ===== HALL OF SHAME ===== */}
         {hallOfShame.length > 0 ? (
           <Animated.View entering={FadeInDown.duration(400).delay(220)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel="Inflation hall of shame">
             <View style={styles.rowBetween}>
@@ -210,7 +284,7 @@ export default function Dashboard() {
           </Animated.View>
         ) : null}
 
-        {/* Extra spend statement */}
+        {/* ===== EXTRA SPEND STATEMENT ===== */}
         {totalDelta > 0 ? (
           <Animated.View entering={FadeInDown.duration(400).delay(280)} style={[styles.statement, { marginHorizontal: 24 }]} accessibilityLabel={`Inflation has cost you an extra ${fmtUSD(totalDelta)} this month`}>
             <Text style={styles.statementText}>
@@ -221,18 +295,18 @@ export default function Dashboard() {
           </Animated.View>
         ) : null}
 
-        {/* Next Trip Estimate */}
+        {/* ===== NEXT TRIP ESTIMATE (secondary) ===== */}
         {tripEstimate > 0 && avgBasket > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(320)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel={`Next trip estimated at ${fmtUSD(tripEstimate)}, based on your average basket of ${fmtUSD(avgBasket)}`}>
+          <Animated.View entering={FadeInDown.duration(400).delay(320)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel={`Next trip estimated at ${fmtUSD(tripEstimate)}`}>
             <Text style={styles.kicker}>NEXT TRIP ESTIMATE</Text>
             <Text style={styles.estimateValue}>{fmtUSD(tripEstimate)}</Text>
             <Text style={styles.subtleSmall}>
-              Your avg basket ({fmtUSD(avgBasket)}) × personal inflation rate
+              Avg basket ({fmtUSD(avgBasket)}) × personal inflation rate
             </Text>
           </Animated.View>
         ) : null}
 
-        {/* Recent evidence — button to open modal */}
+        {/* ===== RECENT EVIDENCE BUTTON ===== */}
         <Animated.View entering={FadeInDown.duration(400).delay(380)} style={[styles.section, { marginHorizontal: 24 }]}>
           <Pressable
             onPress={() => setEvidenceOpen(true)}
@@ -388,80 +462,163 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   brand: { fontFamily: Fonts.mono, fontSize: 13, letterSpacing: 1, color: Colors.foreground },
-  kicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.mutedForeground },
-  bigScore: {
-    marginTop: 4,
-    fontFamily: Fonts.extrabold,
-    fontSize: 64,
-    lineHeight: 66,
-    letterSpacing: -2.5,
-    color: Colors.foreground,
-    fontVariant: ["tabular-nums"],
-  },
-  confRow: { marginTop: 12 },
-  subtle: { marginTop: 8, fontSize: 12.5, color: Colors.mutedForeground, fontFamily: Fonts.regular },
-  subtleSmall: { marginTop: 3, fontSize: 11.5, color: Colors.mutedForeground, fontFamily: Fonts.regular },
-  section: { marginTop: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, paddingTop: 18 },
-  painHead: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
-  painLabel: { marginTop: 6, fontFamily: Fonts.bold, fontSize: 18, letterSpacing: -0.4, color: Colors.foreground },
-  painValue: {
-    fontFamily: Fonts.extrabold,
-    fontSize: 38,
-    letterSpacing: -1.5,
-    color: Colors.foreground,
-    fontVariant: ["tabular-nums"],
-  },
-  painOutOf: { fontSize: 18, color: Colors.mutedForeground },
-  track: { marginTop: 16, height: 8, borderRadius: 999, backgroundColor: Colors.muted, overflow: "hidden" },
-  trackFill: { height: "100%", borderRadius: 999 },
-  worst: {
-    backgroundColor: Colors.accent,
-    borderRadius: Radius.xl,
+
+  /* ========== HERO METRIC CARD ========== */
+  heroCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xxl,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: 24,
-    overflow: "hidden",
-    shadowColor: Colors.accent,
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  worstGhost: {
-    position: "absolute",
-    right: -8,
-    top: -14,
+  heroTopRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  heroKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.mutedForeground },
+  heroDollar: {
     fontFamily: Fonts.extrabold,
-    fontSize: 88,
-    color: "rgba(255,255,255,0.18)",
-    transform: [{ rotate: "12deg" }],
-  },
-  worstKicker: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.5, color: "rgba(255,255,255,0.8)" },
-  worstName: {
-    marginTop: 4,
-    fontFamily: Fonts.extrabold,
-    fontSize: 36,
-    letterSpacing: -1,
-    color: Colors.white,
-  },
-  worstGrid: { marginTop: 24, flexDirection: "row", gap: 16 },
-  worstStatLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.5, color: "rgba(255,255,255,0.7)" },
-  worstStat: {
-    marginTop: 4,
-    fontFamily: Fonts.extrabold,
-    fontSize: 24,
-    letterSpacing: -0.6,
-    color: Colors.white,
+    fontSize: 56,
+    lineHeight: 58,
+    letterSpacing: -2,
+    color: Colors.accent,
     fontVariant: ["tabular-nums"],
   },
-  worstFooter: {
-    marginTop: 24,
+  heroMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  heroSubPct: { fontFamily: Fonts.medium, fontSize: 13, color: Colors.mutedForeground, letterSpacing: -0.2 },
+  heroDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: Colors.borderStrong },
+  heroDivider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginVertical: 16 },
+  heroBottomRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  savingsLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1, color: Colors.mutedForeground },
+  savingsValue: {
+    marginTop: 2,
+    fontFamily: Fonts.extrabold,
+    fontSize: 22,
+    letterSpacing: -0.6,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
+  savingsHint: { marginTop: 2, fontFamily: Fonts.regular, fontSize: 11, color: Colors.mutedForeground },
+
+  /* ========== TRUST BANNER (low confidence) ========== */
+  trustTitle: {
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.8,
+    color: Colors.foreground,
+  },
+  progressBar: {
+    marginTop: 20,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.muted,
+    overflow: "hidden",
+  },
+  progressFill: { height: "100%", borderRadius: 999, backgroundColor: Colors.accent },
+  trustSub: { marginTop: 12, fontFamily: Fonts.medium, fontSize: 13, color: Colors.mutedForeground, letterSpacing: -0.2 },
+  trustBold: { fontFamily: Fonts.bold, color: Colors.foreground },
+
+  /* ========== PRICE ALERT (replaces Worst Offender) ========== */
+  priceAlert: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.accent,
+    padding: 20,
+    overflow: "hidden",
+  },
+  priceAlertBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.accentSoft,
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 12,
+  },
+  priceAlertBannerText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.6, color: Colors.accent },
+  priceAlertName: {
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    letterSpacing: -0.8,
+    color: Colors.foreground,
+  },
+  priceAlertGrid: { marginTop: 18, flexDirection: "row", gap: 16 },
+  priceAlertStatLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.5, color: Colors.mutedForeground },
+  priceAlertStat: {
+    marginTop: 3,
+    fontFamily: Fonts.extrabold,
+    fontSize: 20,
+    letterSpacing: -0.5,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  priceAlertFooter: {
+    marginTop: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.25)",
-    paddingTop: 16,
+    borderTopColor: Colors.border,
+    paddingTop: 14,
   },
-  worstSince: { flex: 1, fontStyle: "italic", fontSize: 12, color: "rgba(255,255,255,0.9)", fontFamily: Fonts.medium },
+  priceAlertSince: { flex: 1, fontSize: 12, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+
+  /* ========== NEXT TRIP STRATEGY ========== */
+  strategyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 14,
+  },
+  strategyName: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  strategyVol: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
+  strategyAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.surface2,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  strategyActionText: { fontFamily: Fonts.bold, fontSize: 9, letterSpacing: 0.6, color: Colors.foreground },
+  strategyActionStore: { fontFamily: Fonts.monoMedium, fontSize: 9, letterSpacing: 0.6, color: Colors.accent },
+
+  /* ========== DATA COLLECTION ========== */
+  dataCollectionCard: {
+    marginTop: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 28,
+    alignItems: "center",
+  },
+  progressBarLarge: {
+    width: "100%",
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: Colors.muted,
+    overflow: "hidden",
+  },
+  progressFillLarge: { height: "100%", borderRadius: 999, backgroundColor: Colors.accent },
+  dataCollectionText: { marginTop: 16, fontFamily: Fonts.medium, fontSize: 15, color: Colors.foreground, letterSpacing: -0.3 },
+  dataCollectionHint: { marginTop: 6, fontFamily: Fonts.regular, fontSize: 12, color: Colors.mutedForeground },
+
+  /* ========== SHARED / LEGACY ========== */
+  kicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.mutedForeground },
+  subtleSmall: { marginTop: 3, fontSize: 11.5, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+  section: { marginTop: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, paddingTop: 18 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   shareLink: { flexDirection: "row", alignItems: "center", gap: 5 },
   shareLinkText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, color: Colors.accent },
@@ -476,11 +633,19 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   hosName: { fontFamily: Fonts.bold, fontSize: 15, letterSpacing: -0.3, color: Colors.foreground },
-  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.accent },
+  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.mutedForeground },
   hosVs: { marginTop: 3, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.5, color: Colors.mutedForeground },
   statement: { marginTop: 36, backgroundColor: Colors.foreground, borderRadius: Radius.xl, padding: 24 },
   statementText: { fontFamily: Fonts.medium, fontSize: 20, lineHeight: 27, letterSpacing: -0.4, color: Colors.background },
   statementAccent: { fontFamily: Fonts.extrabold, color: Colors.accent },
+  estimateValue: {
+    marginTop: 4,
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    letterSpacing: -1,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
   evidenceTrigger: {
     flexDirection: "row",
     alignItems: "center",
@@ -492,6 +657,8 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   evidenceCount: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.5, color: Colors.mutedForeground },
+
+  /* ========== EMPTY STATE ========== */
   emptyTitle: {
     fontFamily: Fonts.extrabold,
     fontSize: 42,
@@ -523,24 +690,6 @@ const styles = StyleSheet.create({
   featureCardOuter: { flex: 1, borderRadius: Radius.lg, overflow: "hidden", borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   featureCardTitle: { marginTop: 10, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1, color: Colors.accent },
   featureCardBody: { marginTop: 6, fontSize: 13, lineHeight: 18, color: Colors.mutedForeground, fontFamily: Fonts.regular },
-  needsDataOverlay: {
-    position: "absolute",
-    right: 0,
-    top: 8,
-    backgroundColor: Colors.amberSoft,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  needsDataText: { fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.8, color: Colors.amber },
-  estimateValue: {
-    marginTop: 4,
-    fontFamily: Fonts.extrabold,
-    fontSize: 38,
-    letterSpacing: -1.5,
-    color: Colors.foreground,
-    fontVariant: ["tabular-nums"],
-  },
 });
 
 const modalStyles = StyleSheet.create({
