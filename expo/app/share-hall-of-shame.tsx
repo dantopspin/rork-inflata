@@ -1,9 +1,10 @@
 import { router } from "expo-router";
-import { ArrowLeft, Share2 } from "lucide-react-native";
-import { useMemo, useRef } from "react";
+import { ArrowLeft, Lock, Share2 } from "lucide-react-native";
+import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PaywallSheet } from "@/components/PaywallSheet";
 import { HallOfShameCard } from "@/components/ShareCard";
 import { Colors, Fonts } from "@/constants/theme";
 import { aggregateItems, inflationScore } from "@/lib/inflation";
@@ -15,6 +16,7 @@ export default function ShareHallOfShame() {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
   const { scans, subscribed } = useApp();
+  const [paywall, setPaywall] = useState<boolean>(false);
   const cardRef = useRef<View>(null);
 
   const stats = useMemo(() => aggregateItems(scans), [scans]);
@@ -32,16 +34,36 @@ export default function ShareHallOfShame() {
         style={[styles.screen, { paddingTop: insets.top + 24, paddingHorizontal: 24 }]}
         accessibilityLabel="Share cards require a subscription"
       >
-        <Text style={styles.lockedKicker}>PAID FEATURE</Text>
-        <Text style={styles.lockedTitle}>Share cards are locked.</Text>
-        <Pressable
-          onPress={() => router.replace("/(tabs)")}
-          style={styles.lockedBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Text style={styles.lockedBtnText}>BACK</Text>
-        </Pressable>
+        <View style={{ alignItems: "center", marginTop: 40 }}>
+          <Lock size={40} color={Colors.accent} />
+          <Text style={styles.lockedKicker}>PAID FEATURE</Text>
+          <Text style={styles.lockedTitle}>Share cards are locked.</Text>
+          <Text style={styles.lockedBody}>
+            Social proof is powerful. Unlock shareable Hall of Shame cards and show your friends what
+            inflation is really doing.
+          </Text>
+          <Pressable
+            onPress={() => setPaywall(true)}
+            style={({ pressed }) => [styles.lockedBtn, pressed && { transform: [{ scale: 0.97 }] }]}
+            accessibilityRole="button"
+            accessibilityLabel="Unlock share cards"
+          >
+            <Text style={styles.lockedBtnText}>UNLOCK — FROM $3.99</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.replace("/(tabs)")}
+            style={styles.lockedBack}
+            hitSlop={8}
+          >
+            <Text style={styles.lockedBackText}>NOT NOW</Text>
+          </Pressable>
+        </View>
+
+        <PaywallSheet
+          open={paywall}
+          onClose={() => setPaywall(false)}
+          reason="Share cards are a paid feature"
+        />
       </View>
     );
   }
@@ -147,8 +169,24 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   shareBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
-  lockedKicker: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.5, color: Colors.accent },
+  lockedKicker: { marginTop: 16, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 1.5, color: Colors.accent },
   lockedTitle: { marginTop: 8, fontFamily: Fonts.extrabold, fontSize: 24, letterSpacing: -0.6, color: Colors.foreground },
-  lockedBtn: { marginTop: 24, alignSelf: "flex-start", backgroundColor: Colors.foreground, borderRadius: 999, paddingHorizontal: 24, paddingVertical: 14 },
-  lockedBtnText: { fontFamily: Fonts.bold, fontSize: 12, letterSpacing: 0.5, color: Colors.background },
+  lockedBody: { marginTop: 12, maxWidth: 300, textAlign: "center", fontSize: 14, lineHeight: 20, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+  lockedBtn: {
+    marginTop: 28,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
+  lockedBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
+  lockedBack: { marginTop: 12, height: 44, alignItems: "center", justifyContent: "center" },
+  lockedBackText: { fontFamily: Fonts.bold, fontSize: 11, letterSpacing: 1, color: Colors.mutedForeground },
 });

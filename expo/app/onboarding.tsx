@@ -15,7 +15,6 @@ import {
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtUSD } from "@/lib/format";
 import { sendWalletAlertPreview, requestNotificationPermission } from "@/lib/notifications";
@@ -46,15 +45,13 @@ function sanitizeDecimal(input: string): string {
 
 export default function Onboarding() {
   const insets = useSafeAreaInsets();
-  const { completeOnboarding, setNotifications, subscribed, postOnboardingPaywallShown, markPostOnboardingPaywallShown } = useApp();
+  const { completeOnboarding, setNotifications } = useApp();
 
   const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
   const [freq, setFreq] = useState<Frequency | null>(null);
   const [prices, setPrices] = useState<Record<string, string>>(
     Object.fromEntries(STAPLES.map((s) => [s.id, s.avgPrice.toFixed(2)])),
   );
-  const [paywall, setPaywall] = useState<boolean>(false);
-
   const goBack = () => {
     if (Platform.OS !== "web") Haptics.selectionAsync();
     setStep((s) => (s > 0 ? ((s - 1) as 0 | 1 | 2 | 3) : s));
@@ -92,11 +89,7 @@ export default function Onboarding() {
   };
 
   const finishOnboarding = () => {
-    if (!subscribed && !postOnboardingPaywallShown) {
-      setPaywall(true);
-    } else {
-      router.replace("/(tabs)");
-    }
+    router.replace("/scan");
   };
 
   const allowNotifications = async () => {
@@ -295,15 +288,6 @@ export default function Onboarding() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <PaywallSheet
-        open={paywall}
-        onClose={() => {
-          setPaywall(false);
-          markPostOnboardingPaywallShown();
-          router.replace("/(tabs)");
-        }}
-        reason="Your groceries are getting more expensive. Know exactly how much."
-      />
     </View>
   );
 }

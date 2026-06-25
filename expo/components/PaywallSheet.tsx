@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { Check, Lock, Sparkles, X } from "lucide-react-native";
+import { Check, TrendingDown, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,11 +18,11 @@ import { getOfferingsForPaywall, PlanId } from "@/lib/subscription";
 import { useApp } from "@/providers/AppProvider";
 
 const FEATURES = [
-  "Unlimited receipt scans",
+  "Price Spike Alerts — catch hikes before checkout",
+  "Store Comparison — see where each item is cheapest",
+  "Unlimited receipt scans — track every trip",
   "Shareable Hall of Shame & spike cards",
-  "Push alerts when prices cross your limits",
   "Full Spending Trends & category breakdowns",
-  "Export your data as CSV",
 ];
 
 type PlanMeta = { price: string; cadence: string };
@@ -111,7 +111,7 @@ export function PaywallSheet({
       <View style={[styles.anchor, { pointerEvents: "box-none" }]}>
         <Animated.View entering={SlideInDown.springify().dampingRatio(0.7).stiffness(280)} style={styles.sheet}>
           <View style={styles.header}>
-            <Text style={styles.kicker}>UPGRADE</Text>
+            <Text style={styles.kicker}>PREMIUM</Text>
             <Pressable
               onPress={onClose}
               hitSlop={12}
@@ -125,8 +125,8 @@ export function PaywallSheet({
 
           {reason ? <Text style={styles.reason}>{reason.toUpperCase()}</Text> : null}
           <Text style={styles.title}>
-            Your groceries are getting more expensive.{"\n"}
-            <Text style={{ color: Colors.accent }}>Know exactly how much.</Text>
+            Stop the overspend.{"\n"}
+            <Text style={{ color: Colors.accent }}>Know every price before you pay.</Text>
           </Text>
 
           <View style={styles.plans}>
@@ -232,12 +232,8 @@ function PlanCard({
           <ActivityIndicator size="small" color={primary ? Colors.accent : Colors.accent} />
         ) : (
           <>
-            {primary ? (
-              <Sparkles size={14} color={Colors.accent} />
-            ) : (
-              <Lock size={14} color={Colors.accent} />
-            )}
-            <Text style={styles.planCtaText}>{primary ? "Most Popular" : "Continue"}</Text>
+            <TrendingDown size={14} color={Colors.accent} />
+            <Text style={styles.planCtaText}>Stop the Overspend</Text>
           </>
         )}
       </View>

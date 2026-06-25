@@ -31,14 +31,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
+import { fmtUSD } from "@/lib/format";
 import { normalize } from "@/lib/normalize";
 import { scanReceipt } from "@/lib/ocr";
-import { FREE_HARD_GATE_AT, uuid } from "@/lib/seed";
+import { FREE_HARD_GATE_AT, STAPLES, uuid } from "@/lib/seed";
 import { realScanCount } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
 
-type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "error";
+type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "discovery" | "error";
 type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string };
 
 export default function ScanScreen() {
@@ -171,6 +172,8 @@ export default function ScanScreen() {
 
     if (!cleaned.length) return;
 
+    const wasFirstScan = realScanCount(scans) === 0;
+
     const priorPrice = new Map<string, number>();
     for (const s of scans) for (const it of s.items) priorPrice.set(it.itemKey, it.price);
     const spikes = cleaned.filter((c) => {
@@ -188,13 +191,18 @@ export default function ScanScreen() {
 
     addScan(scan);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSavedSummary({ spikes });
-    setStage("saved");
 
-    setTimeout(() => {
-      if (!hasOnboarded) router.replace("/onboarding");
-      else router.replace("/(tabs)");
-    }, 1500);
+    if (wasFirstScan) {
+      setSavedSummary({ spikes });
+      setStage("discovery");
+    } else {
+      setSavedSummary({ spikes });
+      setStage("saved");
+      setTimeout(() => {
+        if (!hasOnboarded) router.replace("/onboarding");
+        else router.replace("/(tabs)");
+      }, 1500);
+    }
   };
 
   const toggle = (id: string) =>
@@ -226,6 +234,7 @@ export default function ScanScreen() {
           {effectiveStage === "scanning" && "READING…"}
           {effectiveStage === "review" && "CONFIRM ITEMS"}
           {effectiveStage === "saved" && "SAVED"}
+          {effectiveStage === "discovery" && "INSIGHTS"}
           {effectiveStage === "error" && "SCAN FAILED"}
         </Text>
         <View style={{ width: 40 }} />
@@ -347,6 +356,17 @@ export default function ScanScreen() {
               : "Logged. No spikes this trip."}
           </Text>
         </Animated.View>
+      ) : null}
+
+      {effectiveStage === "discovery" ? (
+        <InflationDiscovery
+          insets={insets}
+          items={items}
+          onContinue={() => {
+            if (!hasOnboarded) router.replace("/onboarding");
+            else router.replace("/(tabs)");
+          }}
+        />
       ) : null}
 
       <PaywallSheet
@@ -499,6 +519,100 @@ function ReviewView({
           )}
         </View>
       </KeyboardAvoidingView>
+    </Animated.View>
+  );
+}
+
+function InflationDiscovery({
+  insets,
+  items,
+  onContinue,
+}: {
+  insets: { top: number; bottom: number };
+  items: Editable[];
+  onContinue: () => void;
+}) {
+  const matches = items
+    .map((it) => {
+      const staple = STAPLES.find(
+        (s) => s.id === it.itemKey || s.name.toLowerCase() === it.name.toLowerCase(),
+      );
+      return staple
+        ? { name: it.name, scanned: Number.parseFloat(it.priceStr), avg: staple.avgPrice, unit: staple.unit }
+        : null;
+    })
+    .filter((m): m is NonNullable<typeof m> => !!m && Number.isFinite(m.scanned));
+
+  const overspent = matches.filter((m) => m.scanned > m.avg);
+  const totalOverspend = overspent.reduce((sum, m) => sum + (m.scanned - m.avg), 0);
+
+  return (
+    <Animated.View entering={SlideInUp.springify().dampingRatio(0.7)} style={styles.reviewSheet}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: insets.bottom + 120 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.discoveryKicker}>INFLATION DISCOVERY</Text>
+        <Text style={styles.discoveryTitle}>
+          {totalOverspend > 0
+            ? `You could save ${fmtUSD(totalOverspend)} right now.`
+            : "Your prices beat the national average."}
+        </Text>
+        <Text style={styles.discoveryBody}>
+          {totalOverspend > 0
+            ? "Here's how your scanned prices compare to the US national average. The green numbers show what you'd pay at a budget store."
+            : "Every item you scanned came in at or below the US national average. Nice work."}
+        </Text>
+
+        <View style={styles.discoveryCard}>
+          {matches.map((m, i) => {
+            const over = m.scanned > m.avg;
+            return (
+              <View
+                key={m.name + i}
+                style={[
+                  styles.discoveryRow,
+                  i === matches.length - 1 && { borderBottomWidth: 0 },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.discoveryItemName}>{m.name}</Text>
+                  <Text style={styles.discoveryItemUnit}>{m.unit}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={[styles.discoveryPrice, over && styles.discoveryPriceHigh]}>
+                    {fmtUSD(m.scanned)}
+                  </Text>
+                  <Text style={styles.discoveryAvg}>
+                    Avg: {fmtUSD(m.avg)}
+                  </Text>
+                  {over ? (
+                    <Text style={styles.discoveryDelta}>
+                      +{fmtUSD(m.scanned - m.avg)} over
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {totalOverspend > 0 ? (
+          <View style={styles.discoveryCallout}>
+            <Text style={styles.discoveryCalloutText}>
+              That's {fmtUSD(totalOverspend)} in <Text style={{ fontFamily: Fonts.extrabold }}>potential savings</Text> you'd
+              pocket by switching to the store with the lowest price on each item.
+            </Text>
+          </View>
+        ) : null}
+
+        <Pressable
+          onPress={onContinue}
+          style={({ pressed }) => [styles.discoveryBtn, pressed && { transform: [{ scale: 0.99 }] }]}
+        >
+          <Text style={styles.discoveryBtnText}>GO TO DASHBOARD</Text>
+        </Pressable>
+      </ScrollView>
     </Animated.View>
   );
 }
@@ -739,4 +853,61 @@ const styles = StyleSheet.create({
   saveBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
   saveBtnDark: { height: 56, borderRadius: 999, backgroundColor: Colors.foreground, alignItems: "center", justifyContent: "center" },
   saveBtnDarkText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.background },
+
+  // Inflation Discovery
+  discoveryKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.accent },
+  discoveryTitle: {
+    marginTop: 8,
+    fontFamily: Fonts.extrabold,
+    fontSize: 28,
+    lineHeight: 32,
+    letterSpacing: -0.8,
+    color: Colors.foreground,
+  },
+  discoveryBody: { marginTop: 8, fontSize: 14, lineHeight: 20, color: Colors.mutedForeground, fontFamily: Fonts.regular },
+  discoveryCard: {
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    overflow: "hidden",
+  },
+  discoveryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  discoveryItemName: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  discoveryItemUnit: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
+  discoveryPrice: { fontFamily: Fonts.bold, fontSize: 16, color: "#22a06b", fontVariant: ["tabular-nums"] },
+  discoveryPriceHigh: { color: Colors.accent },
+  discoveryAvg: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
+  discoveryDelta: { fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.3, color: Colors.destructive },
+  discoveryCallout: {
+    marginTop: 20,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  discoveryCalloutText: { fontSize: 14, lineHeight: 20, color: Colors.foreground, fontFamily: Fonts.regular },
+  discoveryBtn: {
+    marginTop: 32,
+    height: 56,
+    borderRadius: 999,
+    backgroundColor: Colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
+  discoveryBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
 });
