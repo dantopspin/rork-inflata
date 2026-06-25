@@ -1,0 +1,4 @@
+[submodule "receipt-watcher-dash"]
+	path = receipt-watcher-dash
+	url = https://github.com/dantopspin/receipt-watcher-dash.git
+	branch = main

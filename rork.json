@@ -1,0 +1,15 @@
+{
+  "$schema": "https://rork.com/schema/rork.json",
+  "apps": [
+    {
+      "name": "Inflata",
+      "path": "expo",
+      "framework": "react-native",
+      "settings": {
+        "displayName": "Inflata",
+        "iosBundleId": "app.rork.inflata",
+        "androidPackage": "app.rork.inflata"
+      }
+    }
+  ]
+}
