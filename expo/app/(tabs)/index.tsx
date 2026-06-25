@@ -91,8 +91,29 @@ export default function Dashboard() {
         showsVerticalScrollIndicator={false}
         accessibilityLabel="Dashboard"
       >
+        {/* ===== PERSONAL INFLATION RATE — Free Preview ===== */}
+        <Animated.View entering={FadeInDown.duration(400)} style={{ marginTop: 24, paddingHorizontal: 22 }}>
+          <View style={styles.inflationCard} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TrendingUp size={15} color={Colors.accent} strokeWidth={2.5} />
+              <Text style={styles.inflationKicker}>PERSONAL INFLATION RATE</Text>
+            </View>
+            <Text style={styles.inflationValue}>{fmtPct(inflation)}</Text>
+            <Text style={styles.inflationHint}>
+              {conf.level === "low"
+                ? "Based on limited data — scan more receipts for an accurate rate."
+                : conf.level === "medium"
+                  ? "Your rate is firming up as you scan more receipts."
+                  : "Based on your verified scan history."}
+            </Text>
+            <View style={styles.inflationBar}>
+              <View style={[styles.inflationBarFill, { width: `${Math.min(100, Math.abs(inflation) * 2)}%`, backgroundColor: inflation > 5 ? Colors.accent : inflation > 2 ? Colors.amber : Colors.success }]} />
+            </View>
+          </View>
+        </Animated.View>
+
         {/* ===== HERO METRIC CARD ===== */}
-        <Animated.View entering={FadeInDown.duration(400)} style={{ paddingHorizontal: 22 }}>
+        <Animated.View entering={FadeInDown.duration(400).delay(60)} style={{ paddingHorizontal: 22, marginTop: 24 }}>
           {conf.level === "low" ? (
             /* Trust Banner — Gathering Intelligence */
             <View style={styles.heroCard} accessibilityLabel={`Gathering intelligence. ${3 - realCount} more scans needed to unlock your accurate inflation score.`}>
@@ -486,6 +507,39 @@ const styles = StyleSheet.create({
   brand: { fontFamily: Fonts.mono, fontSize: 13, letterSpacing: 1, color: Colors.foreground },
   gearBtn: { padding: 4, borderRadius: Radius.full },
 
+  /* ========== PERSONAL INFLATION RATE CARD ========== */
+  inflationCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xxl,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    padding: 24,
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  inflationKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.accent },
+  inflationValue: {
+    marginTop: 10,
+    fontFamily: Fonts.extrabold,
+    fontSize: 52,
+    lineHeight: 54,
+    letterSpacing: -2,
+    color: Colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  inflationHint: { marginTop: 8, fontFamily: Fonts.regular, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground },
+  inflationBar: {
+    marginTop: 16,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: Colors.muted,
+    overflow: "hidden",
+  },
+  inflationBarFill: { height: "100%", borderRadius: 999 },
+
   /* ========== HERO METRIC CARD ========== */
   heroCard: {
     backgroundColor: Colors.surface,
@@ -658,6 +712,7 @@ const styles = StyleSheet.create({
   hosName: { fontFamily: Fonts.bold, fontSize: 15, letterSpacing: -0.3, color: Colors.foreground },
   hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.mutedForeground },
   hosVs: { marginTop: 3, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.5, color: Colors.mutedForeground },
+  /* ========== STATEMENT ========== */
   statement: { marginTop: 36, backgroundColor: Colors.foreground, borderRadius: Radius.xl, padding: 24 },
   statementText: { fontFamily: Fonts.medium, fontSize: 20, lineHeight: 27, letterSpacing: -0.4, color: Colors.background },
   statementAccent: { fontFamily: Fonts.extrabold, color: Colors.accent },

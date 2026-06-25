@@ -19,6 +19,7 @@ const STRIP_WORDS = new Set([
   "DOZEN", "CT", "LB", "LBS", "OZ", "ML", "GAL", "GALLON",
   "L", "KG", "G", "PK", "EA", "COUNT", "LOAF", "STICKS",
   "HALF", "QUART", "PINT", "BUNCH",
+  "FRESH", "PREMIUM", "ORGANIC",
 ]);
 
 // Core product roots — after stripping, remaining words are checked against these.
@@ -31,6 +32,10 @@ const PRODUCT_ROOTS: { roots: string[]; key: string; canonical: string }[] = [
   { roots: ["CHICKEN", "BREAST", "WING", "THIGH"], key: "chicken-breast", canonical: "Chicken Breast" },
   { roots: ["BEEF", "STEAK"], key: "ground-beef", canonical: "Ground Beef" },
   { roots: ["BANANA", "BANANAS"], key: "bananas", canonical: "Bananas" },
+  { roots: ["AVOCADO", "AVOCADOS"], key: "avocado", canonical: "Avocado" },
+  { roots: ["APPLE", "APPLES"], key: "apple", canonical: "Apple" },
+  { roots: ["PASTA", "SPAGHETTI", "PENNE", "MACARONI"], key: "pasta", canonical: "Pasta" },
+  { roots: ["COFFEE", "GROUND"], key: "coffee", canonical: "Coffee" },
   { roots: ["CHEDDAR", "CHEESE"], key: "cheddar", canonical: "Cheddar Cheese" },
   { roots: ["YOGURT"], key: "yogurt", canonical: "Greek Yogurt" },
   { roots: ["JUICE"], key: "orange-juice", canonical: "Orange Juice" },

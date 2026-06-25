@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Platform } from "react-native";
-import { ArrowLeft, Lock, MapPin, Share2, TrendingUp } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Lock, MapPin, Share2, Shuffle, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +16,44 @@ import { fmtDate, fmtDateLong, fmtPct, fmtUSD } from "@/lib/format";
 import { aggregateItems, itemConfidence, withOverspend } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 import { View as RNView } from "react-native";
+import { ItemStat } from "@/types";
+
+/** Group item keys into food categories for smart substitution suggestions. */
+const CATEGORY_MAP: Record<string, string> = {
+  eggs: "protein",
+  "chicken-breast": "protein",
+  "ground-beef": "protein",
+  milk: "dairy",
+  butter: "dairy",
+  cheddar: "dairy",
+  yogurt: "dairy",
+  bananas: "produce",
+  avocado: "produce",
+  apple: "produce",
+  bread: "grains",
+  pasta: "grains",
+  "orange-juice": "beverages",
+  coffee: "beverages",
+};
+
+function getCategory(key: string): string {
+  return CATEGORY_MAP[key] ?? "other";
+}
+
+/** Find cheaper alternatives in the same food category from the user\'s history. */
+function findAlternatives(current: ItemStat, allStats: ItemStat[]): ItemStat[] {
+  const cat = getCategory(current.key);
+  return allStats
+    .filter(
+      (s) =>
+        s.key !== current.key &&
+        getCategory(s.key) === cat &&
+        s.currentPrice < current.currentPrice &&
+        s.appearances >= 2,
+    )
+    .sort((a, b) => a.currentPrice - b.currentPrice)
+    .slice(0, 2);
+}
 
 export default function ItemDetail() {
   const insets = useSafeAreaInsets();
@@ -30,6 +68,15 @@ export default function ItemDetail() {
   const [paywall, setPaywall] = useState<boolean>(false);
   const cardRef = useRef<RNView>(null);
   const hapticFired = useRef<boolean>(false);
+
+  // All item stats for cross-item comparison (smart substitution)
+  const allStats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
+
+  // Find cheaper alternatives in the same food category when price spikes
+  const alternatives = useMemo(() => {
+    if (!stat || stat.pctChange <= 10) return [];
+    return findAlternatives(stat, allStats);
+  }, [stat, allStats]);
 
   // Compute the savings per trip if there is a cheaper store
   const savingsPerTrip = useMemo(() => {
@@ -185,6 +232,49 @@ export default function ItemDetail() {
             <Text style={styles.subFooterText}>
               Prices for this item are volatile. Consider a generic brand or buying in bulk next trip.
             </Text>
+            {alternatives.length > 0 ? (
+              <View style={styles.altSection}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Shuffle size={12} color={Colors.success} strokeWidth={2.5} />
+                  <Text style={styles.altKicker}>SMART SUBSTITUTION</Text>
+                </View>
+                {alternatives.map((alt) => (
+                  <Pressable
+                    key={alt.key}
+                    style={({ pressed }) => [
+                      styles.altRow,
+                      pressed && { backgroundColor: Colors.muted },
+                    ]}
+                    onPress={() =>
+                      Alert.alert(
+                        `Switch to ${alt.name}`,
+                        `You last paid ${fmtUSD(alt.currentPrice)} for ${alt.name} — that's ${fmtUSD(stat.currentPrice - alt.currentPrice)} less than ${stat.name}. Consider swapping on your next trip.`,
+                        [
+                          { text: "Got it", style: "default" },
+                          { text: `View ${alt.name}`, onPress: () => router.replace(`/item/${alt.key}`) },
+                        ],
+                      )
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Switch to ${alt.name} at ${fmtUSD(alt.currentPrice)}`}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.altName}>{alt.name}</Text>
+                      <Text style={styles.altMeta}>
+                        You last paid {fmtUSD(alt.currentPrice)}
+                        {alt.cheapestStore ? ` • Best at ${alt.cheapestStore}` : ""}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.altSavings}>
+                        SAVE {fmtUSD(stat.currentPrice - alt.currentPrice)}
+                      </Text>
+                      <ArrowRight size={12} color={Colors.success} strokeWidth={2.5} />
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -347,6 +437,50 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     color: Colors.mutedForeground,
+  },
+  /* Smart substitution alternatives */
+  altSection: {
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 14,
+    gap: 10,
+  },
+  altKicker: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: Colors.success,
+    textTransform: "uppercase" as const,
+  },
+  altRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 14,
+  },
+  altName: {
+    fontFamily: Fonts.bold,
+    fontSize: 14,
+    letterSpacing: -0.3,
+    color: Colors.foreground,
+  },
+  altMeta: {
+    marginTop: 3,
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.3,
+    color: Colors.mutedForeground,
+  },
+  altSavings: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    color: Colors.success,
   },
 
   cheapestLabel: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },

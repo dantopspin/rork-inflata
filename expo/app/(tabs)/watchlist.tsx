@@ -1,7 +1,8 @@
 import { router } from "expo-router";
-import { ArrowDownUp, ChevronRight, Store } from "lucide-react-native";
-import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
+import { ArrowDownUp, ChevronRight, Search, Store, X } from "lucide-react-native";
+import { useMemo, useState } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,6 +14,7 @@ import { useApp } from "@/providers/AppProvider";
 export default function Watchlist() {
   const insets = useSafeAreaInsets();
   const { scans } = useApp();
+  const [search, setSearch] = useState<string>("");
 
   const bestPrices = useMemo(() => {
     const stats = aggregateItems(scans);
@@ -24,6 +26,16 @@ export default function Watchlist() {
         return bSavings - aSavings;
       });
   }, [scans]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return bestPrices;
+    return bestPrices.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.cheapestStore ?? "").toLowerCase().includes(q),
+    );
+  }, [bestPrices, search]);
 
   const hasNoData = bestPrices.length === 0;
 
@@ -43,7 +55,33 @@ export default function Watchlist() {
           Where each item is cheapest across all stores you've visited.
         </Text>
 
-        {hasNoData ? (
+        {/* Search filter */}
+        <View style={styles.searchWrap}>
+          <Search size={14} color={Colors.mutedForeground} strokeWidth={2} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Filter by item or store…"
+            placeholderTextColor={Colors.mutedForeground}
+            returnKeyType="search"
+            style={styles.searchInput}
+          />
+          {search.length > 0 ? (
+            <Pressable onPress={() => setSearch("")} hitSlop={8} accessibilityLabel="Clear search">
+              <X size={14} color={Colors.mutedForeground} strokeWidth={2} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {filtered.length === 0 && search.length > 0 ? (
+          <View style={styles.emptyCard}>
+            <Search size={28} color={Colors.mutedForeground} strokeWidth={1.5} />
+            <Text style={styles.emptyTitle}>No matches</Text>
+            <Text style={styles.emptyBody}>
+              No items or stores match "{search}". Try a different search term.
+            </Text>
+          </View>
+        ) : hasNoData ? (
           <View style={styles.emptyCard}>
             <ArrowDownUp size={28} color={Colors.mutedForeground} strokeWidth={1.5} />
             <Text style={styles.emptyTitle}>Not enough data yet</Text>
@@ -54,7 +92,7 @@ export default function Watchlist() {
           </View>
         ) : (
           <View style={{ gap: 10, marginTop: 24 }}>
-            {bestPrices.map((item, i) => {
+            {filtered.map((item, i) => {
               const savings = item.currentPrice - (item.cheapestPrice ?? item.currentPrice);
               const savingsPct =
                 item.currentPrice > 0
@@ -67,7 +105,10 @@ export default function Watchlist() {
                   entering={FadeInDown.duration(350).delay(i * 60)}
                 >
                   <Pressable
-                    onPress={() => router.push(`/item/${item.key}`)}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push(`/item/${item.key}`);
+                    }}
                     style={({ pressed }) => [
                       styles.row,
                       pressed && { backgroundColor: Colors.muted },
@@ -140,6 +181,26 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     color: Colors.mutedForeground,
     lineHeight: 20,
+  },
+
+  /* Search filter */
+  searchWrap: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === "ios" ? 12 : 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Fonts.regular,
+    fontSize: 14,
+    color: Colors.foreground,
   },
 
   emptyCard: {
