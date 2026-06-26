@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { ArrowDownUp, ChevronRight, Search, Store, X } from "lucide-react-native";
+import { ArrowDownUp, ArrowRight, ChevronRight, Search, Store, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -42,6 +42,7 @@ export default function Watchlist() {
   return (
     <View style={styles.screen}>
       <ScrollView
+        keyboardDismissMode="on-drag"
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: insets.top + 12,
@@ -64,6 +65,8 @@ export default function Watchlist() {
             placeholder="Filter by item or store…"
             placeholderTextColor={Colors.mutedForeground}
             returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
             style={styles.searchInput}
           />
           {search.length > 0 ? (
@@ -89,6 +92,18 @@ export default function Watchlist() {
               Scan receipts from at least two different stores to start comparing prices
               and finding the best deals.
             </Text>
+            <Pressable
+              onPress={() => router.push("/scan")}
+              style={({ pressed }) => [
+                styles.startScanBtn,
+                pressed && { transform: [{ scale: 0.97 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Start scanning receipts"
+            >
+              <Text style={styles.startScanBtnText}>START SCANNING</Text>
+              <ArrowRight size={16} color={Colors.accentForeground} />
+            </Pressable>
           </View>
         ) : (
           <View style={{ gap: 10, marginTop: 24 }}>
@@ -142,11 +157,12 @@ export default function Watchlist() {
                         </Text>
                       )}
                     </View>
-                    <ChevronRight
-                      size={14}
-                      color={Colors.mutedForeground}
-                      style={{ marginLeft: 6 }}
-                    />
+                    <View style={{ marginLeft: 6 }}>
+                      <ChevronRight
+                        size={14}
+                        color={Colors.mutedForeground}
+                      />
+                    </View>
                   </Pressable>
                 </Animated.View>
               );
@@ -265,7 +281,7 @@ const styles = StyleSheet.create({
   },
   savingsBadge: {
     marginTop: 4,
-    backgroundColor: Colors.accentSoft,
+    backgroundColor: "rgba(34,160,107,0.12)",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -274,12 +290,34 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: 9.5,
     letterSpacing: 0.4,
-    color: Colors.accent,
+    color: "#22a06b",
   },
   currentPrice: {
     marginTop: 3,
     fontFamily: Fonts.mono,
     fontSize: 10,
     color: Colors.mutedForeground,
+  },
+
+  startScanBtn: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 44,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: Colors.accent,
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  startScanBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: Colors.accentForeground,
   },
 });

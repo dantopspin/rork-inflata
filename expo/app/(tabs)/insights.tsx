@@ -20,11 +20,11 @@ const NATIONAL_AVG_BASKET = STAPLES.reduce((sum, s) => sum + s.avgPrice, 0);
 
 // Category colours — distinct, high-contrast
 const CAT_COLORS: Record<string, string> = {
-  Dairy:   "#F5E6D3",
-  Meat:    "#FAD7D1",
-  Produce: "#DDF4D9",
-  Pantry:  "#E3E0D8",
-  Snacks:  "#FBE4D0",
+  Dairy:   "#D4894A",
+  Meat:    "#C25B52",
+  Produce: "#4A9B5F",
+  Pantry:  "#8B7355",
+  Snacks:  "#C47B2E",
 };
 
 // Realistic demo data — non-linear, looks like real grocery spend
@@ -64,7 +64,7 @@ function pctColor(pct: number): string {
 /** Compute category breakdown from AI-assigned categories. Falls back to "Pantry" if missing. */
 function computeCategories(scans: ReturnType<typeof useApp>["scans"]): [string, number][] | null {
   let total = 0;
-  const sums: Record<string, number> = { Dairy: 0, Meat: 0, Produce: 0, Pantry: 0, Snacks: 0 };
+  const sums: Record<string, number> = {};
 
   for (const s of scans) {
     if (s.source !== "scan") continue;
@@ -131,14 +131,6 @@ export default function Insights() {
     : DEMO_VOLATILE;
   const categoryData = categories ?? (subscribed ? null : DEMO_CATEGORIES);
 
-  // --- Chart computations ---
-  const maxSpend = Math.max(
-    1,
-    ...monthlyData.map(([, v]) => v),
-    NATIONAL_AVG_BASKET,
-    projectedNext,
-  );
-
   // Month-over-month % changes for accessibility
   const momPcts = useMemo(() => {
     const pcts: (number | null)[] = [null]; // first month has no prior
@@ -149,6 +141,16 @@ export default function Insights() {
     }
     return pcts;
   }, [monthlyData]);
+
+  const showNationalAvg = monthlyData.length <= 1;
+
+  // --- Max spend for chart scaling ---
+  const maxSpend = Math.max(
+    1,
+    ...monthlyData.map(([, v]) => v),
+    ...(showNationalAvg ? [NATIONAL_AVG_BASKET] : []),
+    ...(projectedNext > 0 ? [projectedNext] : []),
+  );
 
   // Build an accessible label for the chart
   const chartAccessibilityLabel = useMemo(() => {
@@ -165,8 +167,6 @@ export default function Insights() {
     if (monthlyData.length <= 1) parts.push(`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`);
     return `Monthly spend chart. ${parts.join(". ")}. Highest month: $${maxSpend.toFixed(0)}`;
   }, [monthlyData, momPcts, projectedNext, maxSpend]);
-
-  const showNationalAvg = monthlyData.length <= 1;
 
   return (
     <View style={styles.screen}>
@@ -262,7 +262,7 @@ export default function Insights() {
 
             {/* ── Most volatile ── */}
             <Text style={[styles.cardKicker, { marginTop: 28 }]}>MOST VOLATILE</Text>
-            <Text style={styles.volatileSubtitle}>Unit-price changes, highest Δ first</Text>
+            <Text style={styles.volatileSubtitle}>Ranked by biggest price change per unit.</Text>
             <View style={{ gap: 8, marginTop: 12 }}>
               {volatileData.map((v) => (
                 <View key={v.key} style={[styles.volatileRow, v.isOutlier && styles.volatileRowOutlier]}>
@@ -429,7 +429,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.mutedForeground,
     borderStyle: "dashed",
-    borderRadius: 6,
   },
   projectedBar: {
     backgroundColor: Colors.mutedForeground,
@@ -467,7 +466,7 @@ const styles = StyleSheet.create({
   volatileRowOutlier: {
     borderColor: Colors.destructive,
     borderWidth: 1.5,
-    backgroundColor: Colors.accentSoft,
+    backgroundColor: "rgba(230,180,0,0.08)",
   },
   volatileLeft: { flex: 1, gap: 3 },
   volatileName: {
