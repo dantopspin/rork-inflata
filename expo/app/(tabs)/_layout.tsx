@@ -1,33 +1,51 @@
 import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import { Tabs, router } from "expo-router";
 import { Camera, Eye, Home, Search } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo } from "react";
+import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
   withRepeat,
   withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GlassView } from "expo-glass-effect";
 
 import { Colors, Fonts } from "@/constants/theme";
 import { aggregateItems, realScans, savingsFound } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 
-/** Check if the user has any actionable price drops → monthly savings > 0 */
+// ─────────────────────────────────────────────
+// Theme-aware tab bar colors
+// ─────────────────────────────────────────────
+function useTabBarColors(scheme: "light" | "dark" | null | undefined) {
+  const dark = scheme === "dark";
+  return {
+    activeTint: Colors.accent,
+    inactiveTint: dark ? "rgba(255,255,255,0.4)" : "rgba(18,18,18,0.45)",
+    borderColor: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    // Solid fallback for Android (no blur available)
+    androidBg: dark ? "rgba(18,18,18,0.97)" : "rgba(250,249,245,0.96)",
+  };
+}
+
+// ─────────────────────────────────────────────
+// Hooks
+// ─────────────────────────────────────────────
+
+/** Monthly savings badge — only shown to subscribed users */
 function useMonthlySavingsBadge(): string | undefined {
-  const { scans, frequency } = useApp();
+  const { scans, frequency, subscribed } = useApp();
   return useMemo(() => {
+    if (!subscribed) return undefined;
     const stats = aggregateItems(scans);
     const weekly = savingsFound(stats, frequency);
     if (weekly <= 0) return undefined;
     const monthly = Math.round(weekly * 4.33);
     return `$${monthly}`;
-  }, [scans, frequency]);
+  }, [scans, frequency, subscribed]);
 }
 
 /** True if the user hasn't scanned a receipt in >7 days */
@@ -36,12 +54,17 @@ function useScanIdle(): boolean {
   return useMemo(() => {
     const real = realScans(scans);
     if (!real.length) return false;
-    const lastDate = real.map((s) => s.date).sort().reverse()[0];
+    const lastDate = real.map((s) => s.date).sort().at(-1);
     if (!lastDate) return false;
-    const daysSince = (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24);
+    const daysSince =
+      (Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24);
     return daysSince > 7;
   }, [scans]);
 }
+
+// ─────────────────────────────────────────────
+// Scan FAB
+// ─────────────────────────────────────────────
 
 function ScanButton() {
   const idle = useScanIdle();
@@ -50,8 +73,8 @@ function ScanButton() {
 
   useEffect(() => {
     if (!idle) {
-      ringOpacity.value = 0;
-      ringScale.value = 0.85;
+      ringOpacity.value = withTiming(0, { duration: 300 });
+      ringScale.value = withTiming(0.85, { duration: 300 });
       return;
     }
     ringOpacity.value = withRepeat(
@@ -79,8 +102,9 @@ function ScanButton() {
 
   return (
     <Pressable
-      onPress={(e) => {
-        if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      onPress={() => {
+        if (Platform.OS !== "web")
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         router.push("/scan");
       }}
       style={({ pressed }) => [
@@ -88,27 +112,29 @@ function ScanButton() {
         pressed && { transform: [{ scale: 0.92 }] },
       ]}
       accessibilityLabel="Scan receipt"
-      accessibilityRole="tab"
+      accessibilityRole="button"
     >
-      {idle ? (
-        <View style={styles.pulseContainer}>
+      <View style={styles.pulseContainer}>
+        {idle && (
           <Animated.View style={[styles.pulseRing, ringStyle]} />
-          <View style={styles.scanBtnInner}>
-            <Camera size={22} color={Colors.accentForeground} strokeWidth={2.2} />
-          </View>
-        </View>
-      ) : (
+        )}
         <View style={styles.scanBtnInner}>
           <Camera size={22} color={Colors.accentForeground} strokeWidth={2.2} />
         </View>
-      )}
+      </View>
       <Text style={styles.scanLabel}>Scan</Text>
     </Pressable>
   );
 }
 
+// ─────────────────────────────────────────────
+// Tab Layout
+// ─────────────────────────────────────────────
+
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const scheme = useColorScheme();
+  const tc = useTabBarColors(scheme);
   const savingsBadge = useMonthlySavingsBadge();
 
   return (
@@ -116,12 +142,15 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: Colors.accent,
-          tabBarInactiveTintColor: "rgba(18,18,18,0.45)",
+          tabBarActiveTintColor: tc.activeTint,
+          tabBarInactiveTintColor: tc.inactiveTint,
           tabBarStyle: {
             borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: "rgba(0,0,0,0.06)",
-            backgroundColor: Platform.OS === "ios" ? "transparent" : "rgba(250,249,245,0.96)",
+            borderTopColor: tc.borderColor,
+            // iOS: transparent so BlurView shows through
+            // Android: solid theme-aware color
+            backgroundColor:
+              Platform.OS === "ios" ? "transparent" : tc.androidBg,
             height: 60 + insets.bottom,
             paddingBottom: insets.bottom,
             paddingTop: 6,
@@ -129,7 +158,11 @@ export default function TabLayout() {
           },
           tabBarBackground: () =>
             Platform.OS === "ios" ? (
-              <GlassView style={StyleSheet.absoluteFill} glassEffectStyle="regular" />
+              <BlurView
+                style={StyleSheet.absoluteFill}
+                intensity={80}
+                tint={scheme === "dark" ? "dark" : "light"}
+              />
             ) : null,
           tabBarLabelStyle: {
             fontFamily: Fonts.bold,
@@ -155,6 +188,7 @@ export default function TabLayout() {
             },
           }}
         />
+
         <Tabs.Screen
           name="watchlist"
           options={{
@@ -169,6 +203,7 @@ export default function TabLayout() {
             },
           }}
         />
+
         <Tabs.Screen
           name="scan-tab"
           options={{
@@ -177,6 +212,7 @@ export default function TabLayout() {
             tabBarButton: () => <ScanButton />,
           }}
         />
+
         <Tabs.Screen
           name="insights"
           options={{
@@ -207,6 +243,10 @@ export default function TabLayout() {
     </View>
   );
 }
+
+// ─────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   scanBtn: {
