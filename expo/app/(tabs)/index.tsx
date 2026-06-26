@@ -44,7 +44,7 @@ export default function Dashboard() {
   const tripEstimate = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
   const avgBasket = useMemo(() => averageBasketSize(scans), [scans]);
 
-  const worst = useMemo(() => [...stats].sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))[0], [stats]);
+  const worst = useMemo(() => [...stats].sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))[0] ?? null, [stats]);
   const hallOfShame = useMemo(
     () => [...stats].filter((s) => effectivePriceChange(s) > 0).sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a)).slice(0, 3),
     [stats],
@@ -61,8 +61,8 @@ export default function Dashboard() {
   );
   const recentItems = useMemo(
     () =>
-      recentScans.flatMap((s, idx) =>
-        s.items.map((it) => ({ ...it, itemKey: it.itemKey, scanDate: s.date, store: s.store, rowKey: `${s.id}-${it.itemKey}-${idx}` as string })),
+      recentScans.flatMap((s) =>
+        s.items.map((it, itemIdx) => ({ ...it, itemKey: it.itemKey, scanDate: s.date, store: s.store, rowKey: `${s.id}-${itemIdx}` })),
       ),
     [recentScans],
   );
@@ -77,11 +77,13 @@ export default function Dashboard() {
   // A price alert should fire when ANY tracked item had a recent spike,
   // not just the single worst offender — otherwise critical inflation
   // alerts get buried.
-  const showPriceAlert = topSpikes.some((s) => hasRecentSpike(s));
   const spikeTarget = useMemo(
-    () => topSpikes.find((s) => hasRecentSpike(s)) ?? worst,
+    () =>
+      topSpikes.find((s) => hasRecentSpike(s)) ??
+      (worst && hasRecentSpike(worst) ? worst : null),
     [topSpikes, worst],
   );
+  const showPriceAlert = spikeTarget !== null;
 
   const [paywall, setPaywall] = useState<boolean>(false);
   const [evidenceOpen, setEvidenceOpen] = useState<boolean>(false);
@@ -109,12 +111,12 @@ export default function Dashboard() {
       >
         {/* ===== PERSONAL INFLATION RATE — Free Preview ===== */}
         <Animated.View entering={FadeInDown.duration(400)} style={{ marginTop: 24, paddingHorizontal: 22 }}>
-          <View style={styles.inflationCard} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
+          <View style={[styles.inflationCard, { borderColor: inflation < 0 ? "#22a06b" : Colors.accent, shadowColor: inflation < 0 ? "#22a06b" : Colors.accent }]} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <TrendingUp size={15} color={Colors.accent} strokeWidth={2.5} />
               <Text style={styles.inflationKicker}>PERSONAL INFLATION RATE</Text>
             </View>
-            <Text style={[styles.inflationValue, { color: inflation < 0 ? Colors.success : Colors.accent }]}>{fmtPct(inflation)}</Text>
+            <Text style={[styles.inflationValue, { color: inflation < 0 ? "#22a06b" : Colors.accent }]}>{fmtPct(inflation)}</Text>
             <Text style={styles.inflationHint}>
               {conf.level === "low"
                 ? "Based on limited data — scan more receipts for an accurate rate."
@@ -143,6 +145,7 @@ export default function Dashboard() {
               </View>
               <ScrollView
                 horizontal
+                nestedScrollEnabled
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ gap: 16, paddingRight: 24 }}
               >
@@ -192,7 +195,7 @@ export default function Dashboard() {
                 <TrendingUp size={16} color={Colors.accent} strokeWidth={2} />
                 <Text style={styles.heroKicker}>WEEKLY BURN RATE</Text>
               </View>
-              <Text style={styles.heroDollar}>{fmtUSD(weeklyBurn)}</Text>
+              <Text style={styles.heroDollar} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{fmtUSD(weeklyBurn)}</Text>
               <View style={styles.heroMetaRow}>
                 <Text style={styles.heroSubPct}>
                   {fmtPct(inflation)} inflation
@@ -338,7 +341,12 @@ export default function Dashboard() {
                     </View>
                   </Pressable>
                 );
-              }) : null}
+              }) : uniqueStores >= 2 ? (
+                <Text style={styles.dataCollectionHint}>
+                  Scan more receipts to unlock personalized{"\n"}
+                  trip recommendations.
+                </Text>
+              ) : null}
             </View>
           </Animated.View>
         ) : realCount < 3 ? (
@@ -662,9 +670,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.xxl,
     borderWidth: 1,
-    borderColor: Colors.accent,
     padding: 24,
-    shadowColor: Colors.accent,
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 4 },
@@ -843,7 +849,6 @@ const styles = StyleSheet.create({
   discoveryMission: {
     borderWidth: 1.5,
     borderColor: Colors.accent,
-    borderStyle: "dashed",
     backgroundColor: Colors.accentSoft,
     borderRadius: Radius.md,
     padding: 16,
