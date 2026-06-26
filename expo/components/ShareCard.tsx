@@ -74,42 +74,58 @@ export const HallOfShameCard = forwardRef<View, {
   );
 });
 
-/** Individual item spike card — secondary share asset. */
+/** Individual item spike card — secondary share asset.
+ *  Always renders on white, regardless of system dark mode, so the captured
+ *  share image looks identical for every recipient. */
 export const ItemSpikeCard = forwardRef<View, { stat: ItemStat; sinceLabel: string; rank?: number }>(
   function ItemSpikeCard({ stat, sinceLabel, rank }, ref) {
     const conf = itemConfidence(stat);
     return (
-      <View ref={ref} collapsable={false} style={styles.card}>
+      <View
+        ref={ref}
+        collapsable={false}
+        style={[
+          styles.card,
+          { backgroundColor: "#FFFFFF" },
+        ]}
+      >
         <PerfEdge />
         <View style={styles.head}>
-          <Text style={styles.wordmark}>INFLATA</Text>
-          <View style={styles.dot} />
+          <Text style={[styles.wordmark, { color: "#111111" }]}>INFLATA</Text>
+          <View style={[styles.dot, { borderColor: "#111111" }]} />
         </View>
 
         {rank !== undefined ? (
-          <Text style={styles.spikeRank}>#{rank} WORST OFFENDER</Text>
+          <Text style={[styles.spikeRank, { color: "#F5481B" }]}>#{rank} WORST OFFENDER</Text>
         ) : null}
-        <Text style={styles.itemName}>{stat.name}</Text>
-        <Text style={styles.itemUp}>
+        <Text style={[styles.itemName, { color: "#111111" }]}>{stat.name}</Text>
+        <Text style={[styles.itemUp, { color: "#F5481B" }]}>
           Up {fmtPct(stat.pctChange, false)} since {sinceLabel}
         </Text>
 
-        <Text style={styles.itemPocket}>
+        <Text style={[styles.itemPocket, { color: "#111111" }]}>
           That&apos;s{" "}
           <Text style={styles.bold}>{fmtUSD(stat.cumulativeOverspend)}</Text> more out of your
           pocket in the last 6 months.
         </Text>
 
-        <View style={styles.sparkBox}>
-          <Sparkline prices={stat.history.map((h) => h.price)} height={56} strokeWidth={3} />
-          <Text style={styles.sparkLabel}>
+        <View style={[styles.sparkBox, { borderColor: "rgba(0,0,0,0.12)" }]}>
+          <Sparkline
+            prices={stat.history.map((h) => h.price)}
+            height={56}
+            strokeWidth={3}
+            stroke="#F5481B"
+          />
+          <Text style={[styles.sparkLabel, { color: "#888888" }]}>
             {fmtUSD(stat.firstPrice)} → {fmtUSD(stat.currentPrice)}
           </Text>
         </View>
 
         <View style={styles.itemFooter}>
-          <Text style={styles.confLabel}>{conf.label.toUpperCase()}</Text>
-          <Text style={styles.confLabel}>INFLATA</Text>
+          <Text style={[styles.confLabel, { color: "#AAAAAA" }]}>
+            {conf.label.toUpperCase()}
+          </Text>
+          <Text style={[styles.confLabel, { color: "#AAAAAA" }]}>INFLATA</Text>
         </View>
 
         <PerfEdge />

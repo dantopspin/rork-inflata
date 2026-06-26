@@ -129,14 +129,15 @@ export default function Dashboard() {
               <Text style={[styles.heroDollar, { color: totalDelta > 0 ? Colors.accent : Colors.success }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {fmtUSD(totalDelta)}
               </Text>
-              <View style={styles.heroMetaRow}>
+              <View style={{ marginTop: 6, gap: 2 }}>
                 <Text style={[styles.heroSubPct, { color: totalDelta > 0 ? Colors.accent : Colors.success }]}>
                   {fmtPct(inflation)} personal inflation rate
                 </Text>
-                <View style={styles.heroDot} />
                 <Text style={styles.heroSubPct}>
                   {realCount} {realCount === 1 ? "scan" : "scans"}
-                  {firstScanDate ? ` since ${fmtDate(firstScanDate)}` : ""}
+                  {firstScanDate
+                    ? ` since ${new Date(firstScanDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                    : ""}
                 </Text>
               </View>
               <View style={styles.heroDivider} />
