@@ -38,7 +38,7 @@ export default function Dashboard() {
   const savings = useMemo(() => savingsFound(stats, frequency), [stats, frequency]);
 
   const worst = useMemo(() => [...stats].sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))[0] ?? null, [stats]);
-  const strategyItems = useMemo(() => nextTripStrategyItems(scans, stats), [scans, stats]);
+  const strategyItems = useMemo(() => nextTripStrategyItems(stats), [stats]);
   const topSpikes = useMemo(() => topSpikingItems(stats, 3), [stats]);
   const recentScans = useMemo(
     () =>

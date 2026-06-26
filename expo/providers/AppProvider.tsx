@@ -105,6 +105,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     // Detect >10% price spikes vs prior history for push notification.
     const priorPrice = new Map<string, number>();
     for (const s of scans) {
+      // Skip baseline estimates so spike alerts compare real store prices
+      // to real history, not to synthetic 90-day-old estimates.
+      if (s.source !== "scan") continue;
       for (const it of s.items) {
         priorPrice.set(it.itemKey, it.price);
       }

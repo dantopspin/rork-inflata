@@ -81,13 +81,18 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
         biggestJumpDate = entries[i].date;
       }
     }
-    const pct = ((last.price - first.price) / first.price) * 100;
+    // Use first REAL (non-baseline) entry as baseline so synthetic estimates
+    // don't dominate the inflation percentage when real scan data exists.
+    const firstReal = entries.find((e) => !e.fromBaseline);
+    const baseEntry = firstReal ?? first;
+    const pct = ((last.price - baseEntry.price) / baseEntry.price) * 100;
 
-    // Track cheapest price and store across all history (store-to-store arbitrage)
+    // Track cheapest price and store — exclude baseline entries so
+    // "Baseline estimate" never appears as a store in Watchlist or savings.
     let cheapestPrice = Infinity;
     let cheapestStore = "";
     for (const e of entries) {
-      if (e.price < cheapestPrice) {
+      if (!e.fromBaseline && e.price < cheapestPrice) {
         cheapestPrice = e.price;
         cheapestStore = e.store;
       }
@@ -157,13 +162,13 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
     stats.push({
       key,
       name: last.name,
-      firstPrice: first.price,
-      firstFromBaseline: first.fromBaseline,
-      firstDate: first.date,
+      firstPrice: baseEntry.price,
+      firstFromBaseline: baseEntry.fromBaseline,
+      firstDate: baseEntry.date,
       currentPrice: last.price,
       currentDate: last.date,
       pctChange: pct,
-      dollarChange: last.price - first.price,
+      dollarChange: last.price - baseEntry.price,
       appearances: entries.length,
       realAppearances: realApp,
       cumulativeOverspend: 0, // filled below
@@ -264,7 +269,12 @@ export function inflationScore(stats: ItemStat[]): number {
 
 export function painIndex(stats: ItemStat[], totalSpendDelta: number): number {
   if (!stats.length) return 0;
-  const spendInc = Math.min(100, Math.max(0, totalSpendDelta * 2));
+  // Normalize as percentage of baseline spend rather than raw dollars —
+  // $40 of inflation on a $400 basket is 10%, not 80/100 severe pain.
+  const baselineTotal = stats.reduce((acc, s) => acc + s.firstPrice, 0);
+  const spendInc = baselineTotal > 0
+    ? Math.min(100, Math.max(0, (totalSpendDelta / baselineTotal) * 100))
+    : 0;
   const spikedShare = (stats.filter((s) => s.pctChange > 5).length / stats.length) * 100;
   const newSpikes = Math.min(100, stats.filter((s) => (s.biggestJumpPct ?? 0) > 5).length * 12);
   return Math.round(spendInc * 0.5 + spikedShare * 0.3 + newSpikes * 0.2);
@@ -334,7 +344,7 @@ export function savingsFound(stats: ItemStat[], frequency: string | null): numbe
  * Items with rising prices are flagged as "buy_at" (if a cheaper store exists) or
  * "wait" (if no cheaper alternative). Dropping items get "stock_up".
  */
-export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStrategyItem[] {
+export function nextTripStrategyItems(stats: ItemStat[]): TripStrategyItem[] {
   if (!stats.length) return [];
 
   return stats
