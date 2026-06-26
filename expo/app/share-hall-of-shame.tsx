@@ -37,9 +37,9 @@ export default function ShareHallOfShame() {
         style={[styles.screen, { paddingTop: insets.top + 24, paddingHorizontal: 24 }]}
         accessibilityLabel="Share cards require a subscription"
       >
-        {/* Blurred / grayscale Hall of Shame card behind the lock */}
+        {/* Blurred Hall of Shame card behind the lock — non-interactive overlay */}
         {hasShameToShow ? (
-          <View style={styles.lockedCardPreview}>
+          <View style={styles.lockedCardPreview} pointerEvents="none">
             <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
             <View style={{ opacity: 0.35 }}>
               <HallOfShameCard items={top} inflation={inflation} monthLabel={monthLabel} />
@@ -189,13 +189,14 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   shareBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
-  /* Locked view — blurred card preview */
+  /* Locked view — blurred card preview. Positioned in the upper portion
+     so it doesn't visually cover or intercept the lock CTA below. */
   lockedCardPreview: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
+    height: "55%",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",

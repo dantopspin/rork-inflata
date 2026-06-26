@@ -2,9 +2,10 @@ import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { Tabs, router } from "expo-router";
 import { Camera, Eye, Home, Search } from "lucide-react-native";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -75,25 +76,29 @@ function ScanButton() {
     if (!idle) {
       ringOpacity.value = withTiming(0, { duration: 300 });
       ringScale.value = withTiming(0.85, { duration: 300 });
-      return;
+    } else {
+      ringOpacity.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 600 }),
+          withTiming(0.35, { duration: 600 }),
+        ),
+        -1,
+        true,
+      );
+      ringScale.value = withRepeat(
+        withSequence(
+          withTiming(1.5, { duration: 1200 }),
+          withTiming(0.85, { duration: 1200 }),
+        ),
+        -1,
+        true,
+      );
     }
-    ringOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 600 }),
-        withTiming(0.35, { duration: 600 }),
-      ),
-      -1,
-      true,
-    );
-    ringScale.value = withRepeat(
-      withSequence(
-        withTiming(1.5, { duration: 1200 }),
-        withTiming(0.85, { duration: 1200 }),
-      ),
-      -1,
-      true,
-    );
-  }, [idle]);
+    return () => {
+      cancelAnimation(ringOpacity);
+      cancelAnimation(ringScale);
+    };
+  }, [idle, ringOpacity, ringScale]);
 
   const ringStyle = useAnimatedStyle(() => ({
     opacity: ringOpacity.value,
@@ -113,6 +118,7 @@ function ScanButton() {
       ]}
       accessibilityLabel="Scan receipt"
       accessibilityRole="button"
+      pointerEvents="box-only"
     >
       <View style={styles.pulseContainer}>
         {idle && (
