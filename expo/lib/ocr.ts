@@ -1,9 +1,16 @@
 import { resizeForUpload } from "./resize-for-upload";
 
 const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL as string;
-const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
-// Verify this model name against toolkit docs
+// SECURITY: This key was migrated from EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY.
+// EXPO_PUBLIC_ prefix is removed to prevent client-bundle exposure.
+// You must now supply this secret via EAS Secrets or a backend proxy.
+// See: https://docs.expo.dev/build-reference/variables/
+const SECRET_KEY = process.env.RORK_TOOLKIT_SECRET_KEY as string;
+
+// TODO(security): Verify this model name against your specific Rork toolkit
+// deployment docs. An incorrect identifier will cause 404/400 errors at runtime.
+// If scans fail with "OCR request failed", check the model string first.
 const MODEL = "google/gemini-3.1-flash-lite";
 
 const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Your job is to determine if the image is a receipt and extract store + line items.
@@ -13,9 +20,11 @@ Return ONLY valid JSON — no markdown, no explanation, no conversational text:
   "is_receipt": true,
   "store": "Store Name",
   "items": [
-    { "name": "ITEM NAME", "price": 0.00, "quantity": 12, "unit": "ct", "category": "Dairy" }
+    { "name": "ITEM NAME", "price": 0.00, "quantity": 12, "unit": "ct", "category": "Dairy", "type": "regular" }
   ]
 }
+
+Item type field: "regular" for normal purchases, "promo" for promotional/free items, "discount" for coupon/discount line items. Only use "promo" or "discount" when the receipt explicitly marks the item as free or promotional.
 
 Rules:
 - is_receipt: true if the image shows a grocery receipt or store receipt. false if it's anything else (person, landscape, screenshot, document, etc).
@@ -31,7 +40,7 @@ Rules:
 export type OcrResult = {
   is_receipt: boolean;
   store: string;
-  items: { name: string; price: number; quantity?: number; unit?: string; category?: string }[];
+  items: { name: string; price: number; quantity?: number; unit?: string; category?: string; type?: "regular" | "promo" | "discount" }[];
 };
 
 /**
@@ -87,14 +96,26 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("OCR returned empty response");
 
-  // Robust JSON extraction — find the largest JSON object in the response
-  // This handles AI conversational noise like markdown wrappers or trailing text
+  // Robust JSON extraction — find the largest JSON object in the response.
+  // Handles AI conversational noise like markdown wrappers or trailing text.
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
   if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
     throw new Error(`No JSON object found in OCR response: ${content.slice(0, 200)}`);
   }
   const jsonSubstring = content.slice(firstBrace, lastBrace + 1);
+
+  // Balanced-brace check: ensure the extracted substring has matching {"{"} counts.
+  // Mismatched braces are a strong signal of truncated or malformed AI output.
+  let braceDepth = 0;
+  for (const ch of jsonSubstring) {
+    if (ch === "{") braceDepth++;
+    else if (ch === "}") braceDepth--;
+    if (braceDepth < 0) break;
+  }
+  if (braceDepth !== 0) {
+    throw new Error(`Unbalanced braces in OCR response — likely truncated JSON. Depth: ${braceDepth}. Content: ${jsonSubstring.slice(0, 200)}`);
+  }
 
   let json: OcrResult;
   try {
@@ -103,20 +124,23 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
     throw new Error(`Failed to parse OCR response: ${jsonSubstring.slice(0, 200)}`);
   }
 
-  // Receipt guard — reject non-receipt images early
-  if (json.is_receipt === false) {
+  // Strict receipt guard — reject unless the AI explicitly returns is_receipt: true.
+  // Null, undefined, or missing values are treated as non-receipts to prevent
+  // scans of non-receipt images from proceeding with garbage data.
+  if (json.is_receipt !== true) {
     const err = new Error("Please scan a clear grocery receipt.");
     (err as any).code = "INVALID_IMAGE";
     throw err;
   }
 
-  if (!json.store || !Array.isArray(json.items)) {
-    throw new Error("OCR response missing store or items");
+  if (!Array.isArray(json.items)) {
+    throw new Error("OCR response missing items array");
   }
 
   // Validate and clean items
   const VALID_CATEGORIES = new Set(["Dairy", "Meat", "Produce", "Pantry", "Snacks"]);
   const VALID_UNITS = new Set(["ct", "oz", "lb", "gal", "ea", "each", "fl oz", "pt", "qt", "dozen", "pack"]);
+  const VALID_TYPES = new Set(["regular", "promo", "discount"]);
   const items = json.items
     .map((item) => {
       const rawPrice = typeof item.price === "string" ? Number.parseFloat(item.price) : Number(item.price ?? 0);
@@ -135,17 +159,33 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
       const rawCat = item.category ? String(item.category).trim() : "";
       const category = VALID_CATEGORIES.has(rawCat) ? rawCat : undefined;
 
+      // Type: validate against known set, default to "regular"
+      const rawType = item.type ? String(item.type).trim().toLowerCase() : "";
+      const type = VALID_TYPES.has(rawType) ? (rawType as "regular" | "promo" | "discount") : "regular";
+
       return {
         name: String(item.name ?? "").trim(),
         price,
         quantity,
         unit,
         category,
+        type,
       };
     })
-    .filter((item) => item.name && Number.isFinite(item.price) && item.price > 0);
+    // Items with price 0 are kept ONLY when explicitly marked promo/discount.
+    // All other zero-price items are filtered out as noise.
+    .filter((item) => {
+      if (!item.name) return false;
+      if (!Number.isFinite(item.price)) return false;
+      if (item.price <= 0 && item.type !== "promo" && item.type !== "discount") return false;
+      return true;
+    });
 
   if (!items.length) throw new Error("No valid items found in receipt");
 
-  return { is_receipt: true, store: json.store.trim() || "Unknown Store", items };
+  // Store: default to "Unknown Store" only when the AI returns null/empty.
+  // Do NOT default on scan failure — the guard above handles that.
+  const store = (json.store != null && String(json.store).trim()) ? String(json.store).trim() : "Unknown Store";
+
+  return { is_receipt: true, store, items };
 }

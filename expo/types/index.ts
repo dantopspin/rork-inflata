@@ -9,6 +9,7 @@ export type ScanItem = {
   unitQuantity?: number; // parsed quantity (e.g. 12 for "12ct eggs")
   unitMeasure?: string; // parsed unit (e.g. "oz", "ct", "lb")
   category?: string; // AI-assigned category (Dairy, Meat, Produce, Pantry, Snacks)
+  type?: "regular" | "promo" | "discount"; // item type — promo/discount items may have price 0
 };
 
 export type Scan = {

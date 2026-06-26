@@ -41,7 +41,7 @@ import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
 
 type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "discovery" | "error";
-type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string; unitQuantity?: number; unitMeasure?: string; category?: string };
+type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string; unitQuantity?: number; unitMeasure?: string; category?: string; type?: "regular" | "promo" | "discount" };
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -117,6 +117,7 @@ export default function ScanScreen() {
             unitQuantity: item.quantity,
             unitMeasure: item.unit,
             category: item.category,
+            type: item.type,
           };
         }),
       );
@@ -167,6 +168,7 @@ export default function ScanScreen() {
             unitQuantity: item.quantity,
             unitMeasure: item.unit,
             category: item.category,
+            type: item.type,
           };
         }),
       );
@@ -198,8 +200,15 @@ export default function ScanScreen() {
         unitQuantity: i.unitQuantity,
         unitMeasure: i.unitMeasure,
         category: i.category,
+        type: i.type,
       }))
-      .filter((i) => i.name && Number.isFinite(i.price) && i.price > 0);
+      .filter((i) => {
+        if (!i.name) return false;
+        if (!Number.isFinite(i.price)) return false;
+        // Allow price 0 only for promo/discount items
+        if (i.price <= 0 && i.type !== "promo" && i.type !== "discount") return false;
+        return true;
+      });
 
     if (!cleaned.length) return;
 
