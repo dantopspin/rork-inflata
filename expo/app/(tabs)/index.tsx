@@ -61,8 +61,8 @@ export default function Dashboard() {
   );
   const recentItems = useMemo(
     () =>
-      recentScans.flatMap((s) =>
-        s.items.map((it) => ({ ...it, scanDate: s.date, store: s.store })),
+      recentScans.flatMap((s, idx) =>
+        s.items.map((it) => ({ ...it, scanDate: s.date, store: s.store, rowKey: `${s.id}-${idx}` as string })),
       ),
     [recentScans],
   );
@@ -107,7 +107,7 @@ export default function Dashboard() {
               <TrendingUp size={15} color={Colors.accent} strokeWidth={2.5} />
               <Text style={styles.inflationKicker}>PERSONAL INFLATION RATE</Text>
             </View>
-            <Text style={styles.inflationValue}>{fmtPct(inflation)}</Text>
+            <Text style={[styles.inflationValue, { color: inflation < 0 ? "#22a06b" : Colors.accent }]}>{fmtPct(inflation)}</Text>
             <Text style={styles.inflationHint}>
               {conf.level === "low"
                 ? "Based on limited data — scan more receipts for an accurate rate."
@@ -197,14 +197,26 @@ export default function Dashboard() {
                 </Text>
               </View>
               <View style={styles.heroDivider} />
-              <View style={styles.heroBottomRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.savingsLabel}>SAVINGS FOUND</Text>
-                  <Text style={styles.savingsValue}>{fmtUSD(savings)}</Text>
-                  <Text style={styles.savingsHint}>if bought at cheapest store</Text>
+              {uniqueStores > 1 ? (
+                <View style={styles.heroBottomRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.savingsLabel}>SAVINGS FOUND</Text>
+                    <Text style={styles.savingsValue}>{fmtUSD(savings)}</Text>
+                    <Text style={styles.savingsHint}>if bought at cheapest store</Text>
+                  </View>
+                  <ConfidenceBadge c={conf} />
                 </View>
-                <ConfidenceBadge c={conf} />
-              </View>
+              ) : (
+                <View style={styles.heroBottomRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.savingsLabel, { color: Colors.accent }]}>UNLOCK SAVINGS</Text>
+                    <Text style={[styles.savingsHint, { marginTop: 4, fontSize: 12.5, lineHeight: 18 }]}>
+                      Scan from a 2nd store to unlock savings comparison.
+                    </Text>
+                  </View>
+                  <ConfidenceBadge c={conf} />
+                </View>
+              )}
             </View>
           )}
         </Animated.View>
@@ -253,7 +265,7 @@ export default function Dashboard() {
         ) : null}
 
         {/* ===== NEXT TRIP STRATEGY or DATA COLLECTION ===== */}
-        {realCount > 3 ? (
+        {realCount >= 3 ? (
           <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
             <Text style={styles.kicker}>NEXT TRIP STRATEGY</Text>
             <View style={{ gap: 10, marginTop: 14 }}>
@@ -322,7 +334,7 @@ export default function Dashboard() {
               }) : null}
             </View>
           </Animated.View>
-        ) : realCount <= 3 ? (
+        ) : realCount < 3 ? (
           <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
             <Text style={styles.kicker}>DATA COLLECTION</Text>
             <View style={styles.dataCollectionCard}>
@@ -440,7 +452,7 @@ function RecentEvidenceModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  items: { name: string; price: number; store: string; scanDate: string; itemKey: string }[];
+  items: { name: string; price: number; store: string; scanDate: string; itemKey: string; rowKey?: string }[];
   spikeItem?: import("@/types").ItemStat;
 }) {
   const insets = useSafeAreaInsets();
@@ -536,7 +548,7 @@ function RecentEvidenceModal({
                   </View>
                 );
                 return (
-                  <View key={`${item.itemKey}-${i}`} style={modalStyles.evidenceRow}>
+                  <View key={item.rowKey ?? `${item.itemKey}-${i}`} style={modalStyles.evidenceRow}>
                     {RowContent}
                   </View>
                 );
@@ -604,7 +616,7 @@ function EmptyState() {
         {([
           ["Real Cost", "We track what it actually cost you.", () => <CircleDollarSign size={18} color={Colors.accent} strokeWidth={1.8} />],
           ["Real You", "Compared only to your own history.", () => <Hash size={18} color={Colors.accent} strokeWidth={1.8} />],
-          ["Secure AI", "Images are processed securely via AI", () => <Lock size={18} color={Colors.accent} strokeWidth={1.8} />],
+          ["On-Device", "Receipts never leave your phone.", () => <Lock size={18} color={Colors.accent} strokeWidth={1.8} />],
         ] as const).map(([title, body, renderIcon]) => {
           const cardContent = (
             <View style={styles.featureCard}>
@@ -894,7 +906,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   hosName: { fontFamily: Fonts.bold, fontSize: 15, letterSpacing: -0.3, color: Colors.foreground },
-  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.mutedForeground },
+  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.accent },
   hosVs: { marginTop: 3, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.5, color: Colors.mutedForeground },
   /* ========== STATEMENT ========== */
   statement: { marginTop: 36, backgroundColor: Colors.foreground, borderRadius: Radius.xl, padding: 24 },
