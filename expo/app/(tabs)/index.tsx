@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, Receipt, Settings, Share2, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, MapPin, Receipt, Scale, Settings, Share2, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
@@ -14,6 +15,8 @@ import {
   aggregateItems,
   averageBasketSize,
   confidence,
+  detectShrinkflation,
+  effectivePriceChange,
   hasRecentSpike,
   inflationScore,
   nextTripEstimate,
@@ -41,9 +44,9 @@ export default function Dashboard() {
   const tripEstimate = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
   const avgBasket = useMemo(() => averageBasketSize(scans), [scans]);
 
-  const worst = useMemo(() => [...stats].sort((a, b) => b.pctChange - a.pctChange)[0], [stats]);
+  const worst = useMemo(() => [...stats].sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))[0], [stats]);
   const hallOfShame = useMemo(
-    () => [...stats].filter((s) => s.pctChange > 0).sort((a, b) => b.pctChange - a.pctChange).slice(0, 3),
+    () => [...stats].filter((s) => effectivePriceChange(s) > 0).sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a)).slice(0, 3),
     [stats],
   );
   const strategyItems = useMemo(() => nextTripStrategyItems(scans, stats), [scans, stats]);
@@ -66,6 +69,10 @@ export default function Dashboard() {
   const firstScanDate = useMemo(() => {
     const real = scans.filter((s) => s.source === "scan").map((s) => s.date).sort();
     return real[0];
+  }, [scans]);
+  const uniqueStores = useMemo(() => {
+    const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
+    return stores.size;
   }, [scans]);
   const showPriceAlert = worst ? hasRecentSpike(worst) : false;
 
@@ -109,7 +116,12 @@ export default function Dashboard() {
                   : "Based on your verified scan history."}
             </Text>
             <View style={styles.inflationBar}>
-              <View style={[styles.inflationBarFill, { width: `${Math.min(100, Math.abs(inflation) * 2)}%`, backgroundColor: inflation > 5 ? Colors.accent : inflation > 2 ? Colors.amber : Colors.success }]} />
+              <LinearGradient
+                colors={["#10B981", "#F5481B"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.inflationBarFill, { width: `${Math.min(100, Math.abs(inflation) * 10)}%` }]}
+              />
             </View>
           </View>
         </Animated.View>
@@ -130,7 +142,10 @@ export default function Dashboard() {
                 {topSpikes.map((s) => (
                   <Pressable
                     key={s.key}
-                    onPress={() => router.push(`/item/${s.key}`)}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      router.push(`/item/${s.key}`);
+                    }}
                     style={({ pressed }) => [styles.tickerItem, pressed && { opacity: 0.7 }]}
                     accessibilityRole="button"
                     accessibilityLabel={`${s.name} unit price up ${fmtPct(s.unitPriceChange ?? 0)}`}
@@ -198,20 +213,29 @@ export default function Dashboard() {
         {worst && showPriceAlert ? (
           <Animated.View entering={FadeInDown.duration(400).delay(80)} style={{ marginTop: 24, paddingHorizontal: 24 }}>
             <Pressable
-              onPress={() => router.push(`/item/${worst.key}`)}
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push(`/item/${worst.key}`);
+              }}
               style={({ pressed }) => [styles.priceAlert, pressed && { transform: [{ scale: 0.99 }] }]}
               accessibilityRole="button"
-              accessibilityLabel={`Price spike alert: ${worst.name}, ${fmtPct(worst.pctChange)} increase in last 14 days`}
+              accessibilityLabel={`Price spike alert: ${worst.name}, ${fmtPct(effectivePriceChange(worst))} increase in last 14 days`}
             >
               <View style={styles.priceAlertBanner}>
                 <AlertTriangle size={16} color={Colors.accent} strokeWidth={2} />
                 <Text style={styles.priceAlertBannerText}>PRICE SPIKE ALERT — LAST 14 DAYS</Text>
               </View>
+              {detectShrinkflation(worst) ? (
+                <View style={styles.shrinkflationBadge}>
+                  <Scale size={12} color={Colors.destructive} strokeWidth={2} />
+                  <Text style={styles.shrinkflationBadgeText}>SHRINKFLATION DETECTED</Text>
+                </View>
+              ) : null}
               <Text style={styles.priceAlertName}>{worst.name}</Text>
               <View style={styles.priceAlertGrid}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.priceAlertStatLabel}>SPIKE</Text>
-                  <Text style={styles.priceAlertStat}>{fmtPct(worst.biggestJumpPct ?? worst.pctChange)}</Text>
+                  <Text style={styles.priceAlertStat}>{fmtPct(worst.biggestJumpPct ?? effectivePriceChange(worst))}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.priceAlertStatLabel}>OUT OF POCKET</Text>
@@ -229,11 +253,24 @@ export default function Dashboard() {
         ) : null}
 
         {/* ===== NEXT TRIP STRATEGY or DATA COLLECTION ===== */}
-        {realCount > 3 && strategyItems.length > 0 ? (
+        {realCount > 3 ? (
           <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
             <Text style={styles.kicker}>NEXT TRIP STRATEGY</Text>
             <View style={{ gap: 10, marginTop: 14 }}>
-              {strategyItems.map((item) => {
+              {uniqueStores <= 1 ? (
+                <View style={styles.discoveryMission}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <MapPin size={17} color={Colors.accent} strokeWidth={2} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.discoveryTitle}>Discovery Mission</Text>
+                      <Text style={styles.discoveryBody}>
+                        Scan a receipt from a different store to unlock cross-store savings.
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+              {strategyItems.length > 0 ? strategyItems.map((item) => {
                 const isBuyAt = item.action === "buy_at";
                 const isWait = item.action === "wait";
                 const isStockUp = item.action === "stock_up";
@@ -282,7 +319,7 @@ export default function Dashboard() {
                     </View>
                   </Pressable>
                 );
-              })}
+              }) : null}
             </View>
           </Animated.View>
         ) : realCount <= 3 ? (
@@ -390,7 +427,7 @@ export default function Dashboard() {
       </ScrollView>
 
       <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" totalExtra={totalDelta} />
-      <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} />
+      <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? worst : undefined} />
     </View>
   );
 }
@@ -399,12 +436,31 @@ function RecentEvidenceModal({
   visible,
   onClose,
   items,
+  spikeItem,
 }: {
   visible: boolean;
   onClose: () => void;
   items: { name: string; price: number; store: string; scanDate: string; itemKey: string }[];
+  spikeItem?: import("@/types").ItemStat;
 }) {
   const insets = useSafeAreaInsets();
+
+  // Find the two specific receipts that caused the biggest price spike.
+  const spikePair = useMemo(() => {
+    if (!spikeItem || spikeItem.history.length < 2) return null;
+    let bestPair: { prev: (typeof spikeItem.history)[0]; cur: (typeof spikeItem.history)[0]; pct: number } | null = null;
+    for (let i = 1; i < spikeItem.history.length; i++) {
+      const prev = spikeItem.history[i - 1];
+      const cur = spikeItem.history[i];
+      if (prev.price <= 0) continue;
+      const pct = ((cur.price - prev.price) / prev.price) * 100;
+      if (pct > 0 && (!bestPair || pct > bestPair.pct)) {
+        bestPair = { prev, cur, pct };
+      }
+    }
+    return bestPair;
+  }, [spikeItem]);
+
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View entering={FadeIn.duration(180)} style={modalStyles.backdrop}>
@@ -414,12 +470,53 @@ function RecentEvidenceModal({
         <Animated.View entering={SlideInUp.springify().dampingRatio(0.7).stiffness(280)} style={[modalStyles.sheet, { paddingBottom: insets.bottom + 20 }]}>
           <View style={modalStyles.handle} />
           <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>Recent Evidence</Text>
+            <Text style={modalStyles.title}>
+              {spikePair ? "Spike Evidence" : "Recent Evidence"}
+            </Text>
             <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close evidence modal" accessibilityRole="button">
               <X size={20} color={Colors.mutedForeground} />
             </Pressable>
           </View>
-          {items.length === 0 ? (
+
+          {spikePair ? (
+            <>
+              <Text style={modalStyles.spikeIntro}>
+                {spikeItem!.name} jumped {fmtPct(spikePair.pct)} between these two purchases:
+              </Text>
+              <View style={modalStyles.vsGrid}>
+                <View style={modalStyles.vsCard}>
+                  <Text style={modalStyles.vsLabel}>BEFORE</Text>
+                  <Text style={modalStyles.vsDate}>{fmtDate(spikePair.prev.date)}</Text>
+                  <Text style={modalStyles.vsStore}>{spikePair.prev.store}</Text>
+                  <View style={modalStyles.vsDivider} />
+                  <Text style={modalStyles.vsPrice}>{fmtUSD(spikePair.prev.price)}</Text>
+                  {spikePair.prev.canonicalUnitPrice != null ? (
+                    <Text style={modalStyles.vsUnit}>
+                      {fmtUSD(spikePair.prev.canonicalUnitPrice)}/unit
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={modalStyles.vsArrow}>
+                  <TrendingUp size={28} color={Colors.accent} strokeWidth={2.5} />
+                  <Text style={modalStyles.vsPct}>+{fmtPct(spikePair.pct, false)}</Text>
+                </View>
+
+                <View style={[modalStyles.vsCard, modalStyles.vsCardAfter]}>
+                  <Text style={[modalStyles.vsLabel, { color: Colors.accent }]}>AFTER</Text>
+                  <Text style={modalStyles.vsDate}>{fmtDate(spikePair.cur.date)}</Text>
+                  <Text style={modalStyles.vsStore}>{spikePair.cur.store}</Text>
+                  <View style={modalStyles.vsDivider} />
+                  <Text style={[modalStyles.vsPrice, { color: Colors.accent }]}>{fmtUSD(spikePair.cur.price)}</Text>
+                  {spikePair.cur.canonicalUnitPrice != null ? (
+                    <Text style={[modalStyles.vsUnit, { color: Colors.accent }]}>
+                      {fmtUSD(spikePair.cur.canonicalUnitPrice)}/unit
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </>
+          ) : items.length === 0 ? (
             <Text style={modalStyles.empty}>Scan a receipt to see your purchases.</Text>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
@@ -684,6 +781,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   priceAlertBannerText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.6, color: Colors.accent },
+  shrinkflationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(230,53,53,0.12)",
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 12,
+  },
+  shrinkflationBadgeText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.6, color: Colors.destructive },
   priceAlertName: {
     fontFamily: Fonts.extrabold,
     fontSize: 28,
@@ -712,6 +821,16 @@ const styles = StyleSheet.create({
   priceAlertSince: { flex: 1, fontSize: 12, color: Colors.mutedForeground, fontFamily: Fonts.regular },
 
   /* ========== NEXT TRIP STRATEGY ========== */
+  discoveryMission: {
+    borderWidth: 1.5,
+    borderColor: Colors.accent,
+    borderStyle: "dashed",
+    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.md,
+    padding: 16,
+  },
+  discoveryTitle: { fontFamily: Fonts.extrabold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  discoveryBody: { marginTop: 3, fontFamily: Fonts.regular, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground },
   strategyRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -864,4 +983,26 @@ const modalStyles = StyleSheet.create({
   itemName: { fontFamily: Fonts.semibold, fontSize: 14, color: Colors.foreground },
   itemMeta: { marginTop: 1, fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
   itemPrice: { fontFamily: Fonts.bold, fontSize: 16, color: Colors.foreground, fontVariant: ["tabular-nums"] },
+
+  /* ========== EVIDENCE MODAL SPIKE COMPARISON ========== */
+  spikeIntro: { fontFamily: Fonts.medium, fontSize: 14, lineHeight: 20, color: Colors.mutedForeground, letterSpacing: -0.2, marginBottom: 20 },
+  vsGrid: { flexDirection: "row", alignItems: "stretch", gap: 10, marginBottom: 8 },
+  vsCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: 16,
+    backgroundColor: Colors.surface,
+    alignItems: "center",
+  },
+  vsCardAfter: { borderColor: Colors.accent, borderWidth: 1.5 },
+  vsLabel: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.8, color: Colors.mutedForeground, marginBottom: 6 },
+  vsDate: { fontFamily: Fonts.semibold, fontSize: 13, color: Colors.foreground, marginBottom: 2 },
+  vsStore: { fontFamily: Fonts.medium, fontSize: 12, color: Colors.mutedForeground, marginBottom: 10 },
+  vsDivider: { width: "100%", height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginBottom: 10 },
+  vsPrice: { fontFamily: Fonts.extrabold, fontSize: 22, letterSpacing: -0.5, color: Colors.foreground, fontVariant: ["tabular-nums"] },
+  vsUnit: { marginTop: 4, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
+  vsArrow: { flex: 0, justifyContent: "center", alignItems: "center", paddingHorizontal: 2, minWidth: 56 },
+  vsPct: { marginTop: 4, fontFamily: Fonts.bold, fontSize: 12, color: Colors.accent },
 });

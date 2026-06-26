@@ -231,20 +231,33 @@ export function withOverspend(stats: ItemStat[], frequency: string | null): Item
 }
 
 /**
+ * Best available price-change percentage for a stat: unit-price when known,
+ * falling back to raw-price change. Unit-price is the truth — raw price
+ * misleads when package sizes vary (e.g. 6ct vs 12ct eggs).
+ */
+export function effectivePriceChange(stat: ItemStat): number {
+  if (stat.unitPriceChange != null && Number.isFinite(stat.unitPriceChange)) {
+    return stat.unitPriceChange;
+  }
+  return stat.pctChange;
+}
+
+/**
  * Spend-weighted personal inflation rate.
  * Each item's impact on the total is proportional to its share of the user's
  * total real spend — steak at $50/mo matters 10x more than apples at $5/mo.
+ * Uses unit-price change when available, falling back to raw-price change.
  * Falls back to appearance-weighted when there is no real spend data.
  */
 export function inflationScore(stats: ItemStat[]): number {
   if (!stats.length) return 0;
   const totalSpend = stats.reduce((acc, s) => acc + s.totalSpend, 0);
   if (totalSpend > 0) {
-    const weighted = stats.reduce((acc, s) => acc + s.pctChange * s.totalSpend, 0);
+    const weighted = stats.reduce((acc, s) => acc + effectivePriceChange(s) * s.totalSpend, 0);
     return weighted / totalSpend;
   }
   // Fallback: appearance-weighted for baseline-only items
-  const weighted = stats.reduce((acc, s) => acc + s.pctChange * Math.max(1, s.appearances), 0);
+  const weighted = stats.reduce((acc, s) => acc + effectivePriceChange(s) * Math.max(1, s.appearances), 0);
   const weight = stats.reduce((acc, s) => acc + Math.max(1, s.appearances), 0);
   return weight ? weighted / weight : 0;
 }
@@ -327,31 +340,32 @@ export function nextTripStrategyItems(scans: Scan[], stats: ItemStat[]): TripStr
   return stats
     .filter((s) => s.appearances >= 2)
     .sort((a, b) => {
-      const scoreA = a.appearances * Math.abs(a.pctChange);
-      const scoreB = b.appearances * Math.abs(b.pctChange);
+      const scoreA = a.appearances * Math.abs(effectivePriceChange(a));
+      const scoreB = b.appearances * Math.abs(effectivePriceChange(b));
       return scoreB - scoreA;
     })
     .slice(0, 3)
     .map((s): TripStrategyItem => {
+      const change = effectivePriceChange(s);
       let action: TripStrategyItem["action"] = "as_planned";
       let store = "";
 
-      if (s.pctChange > 20) {
+      if (change > 20) {
         // Extreme spike — suggest switching to an alternative product
         action = "substitution_suggested";
-      } else if (s.pctChange > 5) {
+      } else if (change > 5) {
         if (s.cheapestStore && s.cheapestPrice != null && s.cheapestPrice < s.currentPrice) {
           action = "buy_at";
           store = s.cheapestStore;
         } else {
           action = "wait";
         }
-      } else if (s.pctChange < -5) {
+      } else if (change < -5) {
         action = "stock_up";
         store = s.history[s.history.length - 1]?.store ?? "";
       }
 
-      return { key: s.key, name: s.name, pctChange: s.pctChange, action, store, volatility: s.volatility };
+      return { key: s.key, name: s.name, pctChange: change, action, store, volatility: s.volatility };
     });
 }
 
