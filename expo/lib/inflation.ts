@@ -73,6 +73,10 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
     let biggestJumpPct = 0;
     let biggestJumpDate: string | undefined;
     for (let i = 1; i < entries.length; i++) {
+      // Skip transitions that start from a baseline estimate — the gap
+      // between a 90-day-old national-average guess and a real store price
+      // is not a real spike and misleads the Price Alert card.
+      if (entries[i - 1].fromBaseline) continue;
       const prev = entries[i - 1].price;
       const cur = entries[i].price;
       const pct = ((cur - prev) / prev) * 100;
@@ -400,6 +404,10 @@ export function hasRecentSpike(stat: ItemStat): boolean {
   const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
 
   for (let i = 1; i < stat.history.length; i++) {
+    // Skip transitions that start from a baseline estimate — the gap
+    // between a 90-day-old national-average guess and a real store price
+    // is not a real spike and misleads the Price Alert card.
+    if (stat.history[i - 1].fromBaseline) continue;
     const entryMs = new Date(stat.history[i].date).getTime();
     if (entryMs >= fourteenDaysAgo) {
       const prev = stat.history[i - 1].price;
