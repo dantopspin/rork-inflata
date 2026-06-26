@@ -28,7 +28,24 @@ const CAT_COLORS: Record<string, string> = {
   Snacks:  "#C47B2E",
 };
 
-
+// ── Skeleton data shown behind the paywall blur ──────────────────────────
+// Always rendered at a fixed shape/height when the user is not subscribed,
+// regardless of how much (or how little) real scan data exists. This keeps
+// the lock overlay's size and content consistent, and means we never render
+// real text/empty-state copy in the exact spot the blur has to cover.
+const SKELETON_MONTH_LABELS = ["Mar", "Apr", "May", "Jun"];
+const SKELETON_BAR_HEIGHTS = [48, 72, 58, 86]; // percent
+const SKELETON_VOLATILE = [
+  { key: "sk1", name: "Ground Beef", pctChange: 14.2 },
+  { key: "sk2", name: "Eggs (dozen)", pctChange: -8.6 },
+  { key: "sk3", name: "Olive Oil", pctChange: 11.9 },
+];
+const SKELETON_CATEGORIES: [string, number][] = [
+  ["Produce", 34],
+  ["Dairy", 24],
+  ["Meat", 22],
+  ["Pantry", 20],
+];
 
 function labelMonth(yyyyMm: string): string {
   const [, m] = yyyyMm.split("-");
@@ -74,6 +91,12 @@ export default function Insights() {
     if (subscribed) setPaywall(false);
   }, [subscribed]);
 
+  // When locked, we render a fixed skeleton instead of real data — see
+  // SKELETON_* constants above. This avoids blurring near-empty real
+  // content (dead space) and avoids real text rendering in the exact
+  // spot the blur has to fully obscure (text-ghosting risk).
+  const showSkeleton = !subscribed;
+
   const monthly = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of scans) {
@@ -104,8 +127,8 @@ export default function Insights() {
   const stats = useMemo(() => aggregateItems(scans), [scans]);
   const projectedNext = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
 
-  // Only show real data — never fabricate demo data. Users who haven't scanned
-  // yet see empty states that guide them to start scanning.
+  // Only show real data — never fabricate demo data for SUBSCRIBED users.
+  // (Non-subscribed users see the fixed skeleton instead, handled separately.)
   const hasRealScans = scans.some((s) => s.source === "scan");
   const monthlyData = hasRealScans ? monthly : [];
   const volatileData: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] =
@@ -146,6 +169,8 @@ export default function Insights() {
 
   // Build an accessible label for the chart
   const chartAccessibilityLabel = useMemo(() => {
+    if (showSkeleton) return "Insights locked. Subscribe to see your monthly spend chart.";
+
     const parts = monthlyData.map(([k, v], i) => {
       const month = labelMonth(k);
       const mom = momPcts[i];
@@ -169,7 +194,7 @@ export default function Insights() {
     if (showNationalAvg) extras.push(`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`);
 
     return `Monthly spend chart. ${parts.join(". ")}. ${extras.join(". ")}`;
-  }, [monthlyData, momPcts, projectedNext, showNationalAvg]);
+  }, [monthlyData, momPcts, projectedNext, showNationalAvg, showSkeleton]);
 
   return (
     <View style={styles.screen}>
@@ -186,7 +211,7 @@ export default function Insights() {
         <Text style={styles.title}>Month over month</Text>
 
         {/* ── Monthly Impact Card ── */}
-        {monthlyData.length >= 2 ? (
+        {showSkeleton ? null : monthlyData.length >= 2 ? (
           (() => {
             const cur = monthlyData[monthlyData.length - 1];
             const prev = monthlyData[monthlyData.length - 2];
@@ -231,7 +256,22 @@ export default function Insights() {
             {/* ── Monthly spend bar chart ── */}
             <View style={styles.card} accessibilityLabel={chartAccessibilityLabel}>
               <Text style={styles.cardKicker}>MONTHLY SPEND</Text>
-              {monthlyData.length === 0 ? (
+
+              {showSkeleton ? (
+                <View style={styles.chart}>
+                  {SKELETON_BAR_HEIGHTS.map((h, i) => (
+                    <View key={i} style={styles.barCol}>
+                      <View style={styles.trendBadgeSpacer} />
+                      <View style={styles.barTrack}>
+                        <View style={[styles.bar, styles.skeletonBar, { height: `${h}%` }]} />
+                      </View>
+                      <Text style={styles.barLabel} numberOfLines={1}>
+                        {SKELETON_MONTH_LABELS[i]}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : monthlyData.length === 0 ? (
                 <View style={{ alignItems: "center", paddingVertical: 32 }}>
                   <Text style={styles.emptyHint}>
                     Scan your first receipt to start tracking your monthly grocery spend.
@@ -341,7 +381,21 @@ export default function Insights() {
 
             {/* ── Most volatile ── */}
             <Text style={[styles.cardKicker, { marginTop: 28 }]}>MOST VOLATILE</Text>
-            {volatileData.length === 0 ? (
+            {showSkeleton ? (
+              <View style={{ gap: 8, marginTop: 12 }}>
+                {SKELETON_VOLATILE.map((v) => (
+                  <View key={v.key} style={styles.volatileRow}>
+                    <View style={styles.volatileLeft}>
+                      <Text style={styles.volatileName}>{v.name}</Text>
+                    </View>
+                    <Text style={[styles.volatilePct, { color: pctColor(v.pctChange) }]}>
+                      {v.pctChange > 0 ? "+" : ""}
+                      {v.pctChange.toFixed(1)}%
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : volatileData.length === 0 ? (
               <Text style={[styles.volatileSubtitle, { marginTop: 8 }]}>
                 Scan more receipts to see which items are changing the most.
               </Text>
@@ -378,12 +432,11 @@ export default function Insights() {
             )}
 
             {/* ── Category breakdown ── */}
-            {categoryData && categoryData.length > 0 ? (
-              <View style={[styles.card, { marginTop: 24 }]}>
-                <Text style={styles.cardKicker}>CATEGORY BREAKDOWN</Text>
-                <Text style={styles.volatileSubtitle}>AI-assigned from receipt line items</Text>
+            <View style={[styles.card, { marginTop: 24 }]}>
+              <Text style={styles.cardKicker}>CATEGORY BREAKDOWN</Text>
+              {showSkeleton ? (
                 <View style={{ gap: 14, marginTop: 16 }}>
-                  {categoryData.map(([label, pct]) => (
+                  {SKELETON_CATEGORIES.map(([label, pct]) => (
                     <View key={label}>
                       <View style={styles.catRow}>
                         <Text style={styles.catLabel}>{label}</Text>
@@ -400,28 +453,48 @@ export default function Insights() {
                     </View>
                   ))}
                 </View>
-              </View>
-            ) : subscribed ? (
-              // Subscribed but no scan data yet — show empty state with CTA
-              <View style={[styles.card, { marginTop: 24, alignItems: "center", paddingVertical: 28 }]}>
-                <Text style={styles.cardKicker}>CATEGORY BREAKDOWN</Text>
-                <Text style={[styles.emptyHint, { marginTop: 12 }]}>
-                  Scan more receipts to see how your spend breaks down by category.
-                </Text>
-                <Pressable
-                  onPress={() => router.push("/scan")}
-                  style={({ pressed }) => [
-                    styles.startScanBtn,
-                    pressed && { transform: [{ scale: 0.97 }] },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Start scanning receipts"
-                >
-                  <Text style={styles.startScanBtnText}>START SCANNING</Text>
-                  <ArrowRight size={16} color={Colors.accentForeground} />
-                </Pressable>
-              </View>
-            ) : null}
+              ) : categoryData && categoryData.length > 0 ? (
+                <>
+                  <Text style={styles.volatileSubtitle}>AI-assigned from receipt line items</Text>
+                  <View style={{ gap: 14, marginTop: 16 }}>
+                    {categoryData.map(([label, pct]) => (
+                      <View key={label}>
+                        <View style={styles.catRow}>
+                          <Text style={styles.catLabel}>{label}</Text>
+                          <Text style={styles.catPct}>{pct}%</Text>
+                        </View>
+                        <View style={styles.catTrack}>
+                          <View
+                            style={[
+                              styles.catFill,
+                              { width: `${pct}%`, backgroundColor: CAT_COLORS[label] ?? Colors.mutedForeground },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : (
+                <View style={{ alignItems: "center", paddingVertical: 28 }}>
+                  <Text style={[styles.emptyHint, { marginTop: 12 }]}>
+                    Scan more receipts to see how your spend breaks down by category.
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push("/scan")}
+                    style={({ pressed }) => [
+                      styles.startScanBtn,
+                      pressed && { transform: [{ scale: 0.97 }] },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Start scanning receipts"
+                  >
+                    <Text style={styles.startScanBtnText}>START SCANNING</Text>
+                    <ArrowRight size={16} color={Colors.accentForeground} />
+                  </Pressable>
+                </View>
+              )}
+            </View>
           </View>
 
           {/* ── Paywall blur overlay ── */}
@@ -520,6 +593,10 @@ const styles = StyleSheet.create({
   projectedBar: {
     backgroundColor: Colors.mutedForeground,
     opacity: 0.45,
+  },
+  skeletonBar: {
+    backgroundColor: Colors.mutedForeground,
+    opacity: 0.3,
   },
   barLabel: {
     fontFamily: Fonts.mono,
