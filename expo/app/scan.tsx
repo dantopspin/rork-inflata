@@ -125,8 +125,12 @@ export default function ScanScreen() {
       setStage("review");
     } catch (err) {
       console.log("[scan] gallery OCR failed", err);
-      const code = (err as any).code;
-      setErrorMessage(code === "INVALID_IMAGE" ? "INVALID_IMAGE" : err instanceof Error ? err.message : String(err ?? ""));
+      const code = (err as any).code as string | undefined;
+      // Pass the error code as a prefix so the error screen can pattern-match.
+      // Format: "CODE: human message" when a code exists; raw message otherwise.
+      const prefix = code ? `${code}: ` : "";
+      const body = err instanceof Error ? err.message : String(err ?? "");
+      setErrorMessage(prefix + body);
       setStage("error");
     }
   };
@@ -176,9 +180,10 @@ export default function ScanScreen() {
       setStage("review");
     } catch (err) {
       console.log("[scan] AI OCR failed, using fallback", err);
-      // Fallback: show error and allow retry
-      const code = (err as any).code;
-      setErrorMessage(code === "INVALID_IMAGE" ? "INVALID_IMAGE" : err instanceof Error ? err.message : String(err ?? ""));
+      const code = (err as any).code as string | undefined;
+      const prefix = code ? `${code}: ` : "";
+      const body = err instanceof Error ? err.message : String(err ?? "");
+      setErrorMessage(prefix + body);
       setStage("error");
     }
   };
@@ -358,24 +363,28 @@ export default function ScanScreen() {
           <Text style={styles.scanningTitle}>
             {errorMessage.includes("INVALID_IMAGE")
               ? "Please scan a clear receipt."
-              : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
-                ? "Authentication error. Check app configuration."
-                : errorMessage.includes("HTTP_404")
-                  ? "OCR model not found. Check model configuration."
-                  : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
-                    ? "Image too large. Try a smaller receipt."
-                    : "Couldn't read this receipt."}
+              : errorMessage.includes("TIMEOUT")
+                ? "Request timed out. Check your connection."
+                : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                  ? "Authentication error. Check app configuration."
+                  : errorMessage.includes("HTTP_404")
+                    ? "OCR model not found. Check model configuration."
+                    : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                      ? "Image too large. Try a smaller receipt."
+                      : "Couldn't read this receipt."}
           </Text>
           <Text style={styles.scanningHint}>
             {errorMessage.includes("INVALID_IMAGE")
               ? "This doesn't look like a grocery receipt. Try a different image."
-              : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
-                ? "The app is missing a valid API key. Please contact support."
-                : errorMessage.includes("HTTP_404")
-                  ? "The AI model is misconfigured. Please contact support."
-                  : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
-                    ? "Try cropping to just the receipt area."
-                    : "Try again with better lighting and a flat surface."}
+              : errorMessage.includes("TIMEOUT")
+                ? "The server took too long to respond. Please try again."
+                : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                  ? "The app is missing a valid API key. Please contact support."
+                  : errorMessage.includes("HTTP_404")
+                    ? "The AI model is misconfigured. Please contact support."
+                    : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                      ? "Try cropping to just the receipt area."
+                      : "Try again with better lighting and a flat surface."}
           </Text>
           <Pressable
             onPress={retryCapture}

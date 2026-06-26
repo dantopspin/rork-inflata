@@ -60,7 +60,7 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [loaded] = useFonts({
+  const [loaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -69,6 +69,10 @@ export default function RootLayout() {
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
+
+  // Block render until fonts load — prevents flash of system-font text
+  // and ensures every fontFamily reference resolves correctly.
+  if (!loaded && !fontError) return null;
 
   return (
     <QueryClientProvider client={queryClient}>

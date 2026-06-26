@@ -51,13 +51,19 @@ export type OcrResult = {
 export async function scanReceipt(imageUri: string): Promise<OcrResult> {
   const { base64, mimeType } = await resizeForUpload(imageUri);
 
-  const response = await fetch(`${TOOLKIT_URL}/v2/vercel/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SECRET_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  // 30-second timeout — prevents infinite spinner on slow connections.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  let response: Response;
+  try {
+    response = await fetch(`${TOOLKIT_URL}/v2/vercel/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SECRET_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
       model: MODEL,
       messages: [
         {
@@ -87,8 +93,19 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
       // certain proxies) reject it or silently ignore it, causing empty/invalid
       // JSON. The system prompt already commands pure-JSON output, and the
       // multi-strategy extraction below handles any leftover prose.
-    }),
-  });
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if ((e as Error).name === "AbortError") {
+      const err = new Error("OCR request timed out. Check your connection and try again.");
+      (err as any).code = "TIMEOUT";
+      throw err;
+    }
+    throw e;
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

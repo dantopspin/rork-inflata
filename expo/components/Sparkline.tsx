@@ -14,7 +14,20 @@ export function Sparkline({
   strokeWidth?: number;
 }) {
   if (prices.length < 2) {
-    return <Svg width="100%" height={height} viewBox="0 0 100 40" />;
+    // Single data point — draw a faint flat dash so the card area isn't empty.
+    return (
+      <Svg width="100%" height={height} viewBox="0 0 100 40">
+        <Polyline
+          points="35,20 65,20"
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          opacity={0.25}
+        />
+      </Svg>
+    );
   }
   const minP = Math.min(...prices);
   const maxP = Math.max(...prices);

@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  ExternalLink,
   Lock,
   RotateCcw,
   Trash2,
@@ -30,6 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { cancelAllScheduled, requestNotificationPermission } from "@/lib/notifications";
+import { manageSubscription } from "@/lib/subscription";
 import { useApp } from "@/providers/AppProvider";
 import { Frequency } from "@/types";
 
@@ -165,7 +167,8 @@ export default function Settings() {
                     the App Store — Apple manages all billing.
                   </Text>
                   <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                    <Pressable onPress={() => { cancelSubscription(); setConfirmCancel(false); }} style={styles.eraseBtn}>
+                    <Pressable onPress={() => { manageSubscription(); setConfirmCancel(false); }} style={styles.eraseBtn}>
+                      <ExternalLink size={12} color={Colors.destructiveForeground} style={{ marginRight: 6 }} />
                       <Text style={styles.eraseBtnText}>MANAGE IN APP STORE</Text>
                     </Pressable>
                     <Pressable onPress={() => setConfirmCancel(false)} style={styles.cancelBtn}>

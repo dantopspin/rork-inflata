@@ -159,7 +159,7 @@ export default function Dashboard() {
                   >
                     <Text style={styles.tickerItemName} numberOfLines={1}>{s.name}</Text>
                     <Text style={styles.tickerItemPct}>
-                      +{fmtPct(s.unitPriceChange ?? 0, false)} per unit
+                      {(s.unitPriceChange ?? 0) > 0 ? "+" : ""}{fmtPct(s.unitPriceChange ?? 0, false)} per unit
                     </Text>
                   </Pressable>
                 ))}

@@ -87,5 +87,7 @@ export async function resizeForUpload(
     }
   }
 
-  throw new Error("IMAGE_TOO_LARGE");
+  const err = new Error("Image too large. Try cropping to just the receipt area.");
+  (err as any).code = "IMAGE_TOO_LARGE";
+  throw err;
 }
