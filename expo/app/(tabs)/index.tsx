@@ -1,7 +1,6 @@
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, Lock, MapPin, Receipt, Scale, Settings, Share2, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, MapPin, Receipt, Scale, Settings, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
@@ -9,47 +8,36 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtDate, fmtDateLong, fmtPct, fmtUSD } from "@/lib/format";
 import {
   aggregateItems,
-  averageBasketSize,
   confidence,
   detectShrinkflation,
   effectivePriceChange,
   hasRecentSpike,
   inflationScore,
-  nextTripEstimate,
   nextTripStrategyItems,
   realScanCount,
   savingsFound,
   topSpikingItems,
   totalSpendBaselineVsCurrent,
-  weeklyBurnRate,
   withOverspend,
 } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
 
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
-  const { hydrated, scans, frequency, subscribed } = useApp();
+  const { hydrated, scans, frequency } = useApp();
 
   const realCount = realScanCount(scans);
   const stats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
   const inflation = useMemo(() => inflationScore(stats), [stats]);
   const totalDelta = useMemo(() => totalSpendBaselineVsCurrent(stats), [stats]);
   const conf = useMemo(() => confidence(scans, stats), [scans, stats]);
-  const weeklyBurn = useMemo(() => weeklyBurnRate(stats), [stats]);
   const savings = useMemo(() => savingsFound(stats, frequency), [stats, frequency]);
-  const tripEstimate = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
-  const avgBasket = useMemo(() => averageBasketSize(scans), [scans]);
 
   const worst = useMemo(() => [...stats].sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))[0] ?? null, [stats]);
-  const hallOfShame = useMemo(
-    () => [...stats].filter((s) => effectivePriceChange(s) > 0).sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a)).slice(0, 3),
-    [stats],
-  );
   const strategyItems = useMemo(() => nextTripStrategyItems(scans, stats), [scans, stats]);
   const topSpikes = useMemo(() => topSpikingItems(stats, 3), [stats]);
   const recentScans = useMemo(
@@ -75,9 +63,6 @@ export default function Dashboard() {
     const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
     return stores.size;
   }, [scans]);
-  // A price alert should fire when ANY tracked item had a recent spike,
-  // not just the single worst offender — otherwise critical inflation
-  // alerts get buried.
   const spikeTarget = useMemo(
     () =>
       topSpikes.find((s) => hasRecentSpike(s)) ??
@@ -86,7 +71,6 @@ export default function Dashboard() {
   );
   const showPriceAlert = spikeTarget !== null;
 
-  const [paywall, setPaywall] = useState<boolean>(false);
   const [evidenceOpen, setEvidenceOpen] = useState<boolean>(false);
 
   if (!hydrated) {
@@ -102,6 +86,11 @@ export default function Dashboard() {
     );
   }
 
+  const heroAccessibilityLabel =
+    conf.level === "low"
+      ? `Gathering intelligence. ${Math.max(0, 3 - realCount)} more scans needed to unlock your accurate inflation score.`
+      : `Inflation has cost you ${fmtUSD(totalDelta)} this month. Personal inflation rate ${fmtPct(inflation)}.`;
+
   return (
     <View style={styles.screen}>
       <Header />
@@ -111,73 +100,11 @@ export default function Dashboard() {
         showsVerticalScrollIndicator={false}
         accessibilityLabel="Dashboard"
       >
-        {/* ===== PERSONAL INFLATION RATE — Free Preview ===== */}
-        <Animated.View entering={FadeInDown.duration(400)} style={{ marginTop: 24, paddingHorizontal: 22 }}>
-          <View style={[styles.inflationCard, { borderColor: inflation < 0 ? "#22a06b" : Colors.accent, shadowColor: inflation < 0 ? "#22a06b" : Colors.accent }]} accessibilityLabel={`Your personal inflation rate is ${fmtPct(inflation)}`}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <TrendingUp size={15} color={Colors.accent} strokeWidth={2.5} />
-              <Text style={styles.inflationKicker}>PERSONAL INFLATION RATE</Text>
-            </View>
-            <Text style={[styles.inflationValue, { color: inflation < 0 ? "#22a06b" : Colors.accent }]}>{fmtPct(inflation)}</Text>
-            <Text style={styles.inflationHint}>
-              {conf.level === "low"
-                ? "Based on limited data — scan more receipts for an accurate rate."
-                : conf.level === "medium"
-                  ? "Your rate is firming up as you scan more receipts."
-                  : "Based on your verified scan history."}
-            </Text>
-            <View style={styles.inflationBar}>
-              <LinearGradient
-                colors={["#10B981", "#F5481B"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[styles.inflationBarFill, { width: `${Math.min(100, Math.abs(inflation) * 10)}%` }]}
-              />
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* ===== INFLATION ALERT TICKER ===== */}
-        {topSpikes.length > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(100)} style={{ marginTop: 20, paddingHorizontal: 24 }}>
-            <View style={styles.tickerTrack}>
-              <View style={styles.tickerBadge}>
-                <AlertTriangle size={11} color={Colors.accentForeground} strokeWidth={2.5} />
-                <Text style={styles.tickerBadgeText}>INFLATION ALERT</Text>
-              </View>
-              <ScrollView
-                horizontal
-                nestedScrollEnabled
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 16, paddingRight: 24 }}
-              >
-                {topSpikes.map((s) => (
-                  <Pressable
-                    key={s.key}
-                    onPress={() => {
-                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      router.push(`/item/${s.key}`);
-                    }}
-                    style={({ pressed }) => [styles.tickerItem, pressed && { opacity: 0.7 }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${s.name} unit price up ${fmtPct(s.unitPriceChange ?? 0)}`}
-                  >
-                    <Text style={styles.tickerItemName} numberOfLines={1}>{s.name}</Text>
-                    <Text style={styles.tickerItemPct}>
-                      {(s.unitPriceChange ?? 0) > 0 ? "+" : ""}{fmtPct(s.unitPriceChange ?? 0, false)} per unit
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          </Animated.View>
-        ) : null}
-
-        {/* ===== HERO METRIC CARD ===== */}
-        <Animated.View entering={FadeInDown.duration(400).delay(60)} style={{ paddingHorizontal: 22, marginTop: 24 }}>
+        {/* ===== HERO CARD — Overall Dollar Impact ===== */}
+        <Animated.View entering={FadeInDown.duration(400)} style={{ paddingHorizontal: 22, marginTop: 24 }}>
           {conf.level === "low" ? (
-            /* Trust Banner — Gathering Intelligence */
-            <View style={styles.heroCard} accessibilityLabel={`Gathering intelligence. ${3 - realCount} more scans needed to unlock your accurate inflation score.`}>
+            /* Gathering Intelligence — merged into hero area */
+            <View style={styles.heroCard} accessibilityLabel={heroAccessibilityLabel}>
               <View style={styles.heroTopRow}>
                 <Zap size={18} color={Colors.accent} strokeWidth={1.8} />
                 <Text style={styles.heroKicker}>GATHERING INTELLIGENCE</Text>
@@ -191,16 +118,20 @@ export default function Dashboard() {
               </Text>
             </View>
           ) : (
-            /* Hero Metric — Weekly Burn */
-            <View style={styles.heroCard} accessibilityLabel={`Weekly burn rate ${fmtUSD(weeklyBurn)}. Inflation rate ${fmtPct(inflation)}.`}>
+            /* Hero Metric — Inflation Cost This Month */
+            <View style={[styles.heroCard, { borderColor: totalDelta > 0 ? Colors.accent : "#22a06b", shadowColor: totalDelta > 0 ? Colors.accent : "#22a06b" }]} accessibilityLabel={heroAccessibilityLabel}>
               <View style={styles.heroTopRow}>
-                <TrendingUp size={16} color={Colors.accent} strokeWidth={2} />
-                <Text style={styles.heroKicker}>WEEKLY BURN RATE</Text>
+                <TrendingUp size={16} color={totalDelta > 0 ? Colors.accent : "#22a06b"} strokeWidth={2} />
+                <Text style={[styles.heroKicker, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]}>
+                  INFLATION COST THIS MONTH
+                </Text>
               </View>
-              <Text style={styles.heroDollar} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{fmtUSD(weeklyBurn)}</Text>
+              <Text style={[styles.heroDollar, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {fmtUSD(totalDelta)}
+              </Text>
               <View style={styles.heroMetaRow}>
-                <Text style={styles.heroSubPct}>
-                  {fmtPct(inflation)} inflation
+                <Text style={[styles.heroSubPct, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]}>
+                  {fmtPct(inflation)} personal inflation rate
                 </Text>
                 <View style={styles.heroDot} />
                 <Text style={styles.heroSubPct}>
@@ -233,9 +164,58 @@ export default function Dashboard() {
           )}
         </Animated.View>
 
-        {/* ===== PRICE ALERT (replaces Worst Offender) ===== */}
+        {/* ===== TOP 3 PRICE SPIKES — The Biggest Issues ===== */}
+        {topSpikes.length > 0 ? (
+          <Animated.View entering={FadeInDown.duration(400).delay(80)} style={[styles.section, { marginHorizontal: 24 }]}>
+            <View style={styles.rowBetween}>
+              <Text style={[styles.kicker, { color: Colors.accent }]}>TOP 3 PRICE SPIKES</Text>
+              {showPriceAlert ? (
+                <View style={styles.alertDotRow}>
+                  <AlertTriangle size={11} color={Colors.accent} strokeWidth={2.5} />
+                  <Text style={styles.alertDotText}>ACTIVE ALERT</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={{ gap: 10, marginTop: 14 }}>
+              {topSpikes.map((s, idx) => {
+                const pct = s.unitPriceChange ?? effectivePriceChange(s);
+                return (
+                  <Pressable
+                    key={s.key}
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push(`/item/${s.key}`);
+                    }}
+                    style={({ pressed }) => [styles.spikeRow, idx === 0 && showPriceAlert && styles.spikeRowAlert, pressed && { backgroundColor: Colors.muted }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${s.name}, unit price up ${fmtPct(pct)}`}
+                  >
+                    <View style={[styles.spikeRank, idx === 0 && showPriceAlert && { backgroundColor: Colors.accentSoft }]}>
+                      <Text style={[styles.spikeRankNum, idx === 0 && showPriceAlert && { color: Colors.accent }]}>{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.spikeName} numberOfLines={1}>{s.name}</Text>
+                      <Text style={styles.spikeMeta}>
+                        +{fmtUSD(Math.max(0, s.cumulativeOverspend))} extra this month
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={[styles.spikePct, idx === 0 && showPriceAlert && { color: Colors.accent }]}>
+                        +{fmtPct(pct, false)}
+                      </Text>
+                      <Text style={styles.spikePerUnitLabel}>per unit</Text>
+                    </View>
+                    <ChevronRight size={13} color={Colors.mutedForeground} style={{ marginLeft: 6 }} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {/* ===== PRICE ALERT — Critical Warning ===== */}
         {showPriceAlert && spikeTarget ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(80)} style={{ marginTop: 24, paddingHorizontal: 24 }}>
+          <Animated.View entering={FadeInDown.duration(400).delay(100)} style={{ marginTop: 16, paddingHorizontal: 24 }}>
             <Pressable
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -278,7 +258,7 @@ export default function Dashboard() {
 
         {/* ===== NEXT TRIP STRATEGY or DATA COLLECTION ===== */}
         {realCount >= 3 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
+          <Animated.View entering={FadeInDown.duration(400).delay(160)} style={[styles.section, { marginHorizontal: 24 }]}>
             <Text style={styles.kicker}>NEXT TRIP STRATEGY</Text>
             <View style={{ gap: 10, marginTop: 14 }}>
               {uniqueStores <= 1 ? (
@@ -352,7 +332,7 @@ export default function Dashboard() {
             </View>
           </Animated.View>
         ) : realCount < 3 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(150)} style={[styles.section, { marginHorizontal: 24 }]}>
+          <Animated.View entering={FadeInDown.duration(400).delay(160)} style={[styles.section, { marginHorizontal: 24 }]}>
             <Text style={styles.kicker}>DATA COLLECTION</Text>
             <View style={styles.dataCollectionCard}>
               <View style={styles.progressBarLarge}>
@@ -368,73 +348,8 @@ export default function Dashboard() {
           </Animated.View>
         ) : null}
 
-        {/* ===== HALL OF SHAME ===== */}
-        {hallOfShame.length > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(220)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel="Inflation hall of shame">
-            <View style={styles.rowBetween}>
-              <Text style={styles.kicker}>INFLATION HALL OF SHAME</Text>
-              <Pressable
-                onPress={() => (subscribed ? router.push("/share-hall-of-shame") : setPaywall(true))}
-                hitSlop={8}
-                style={styles.shareLink}
-              >
-                {subscribed ? (
-                  <Share2 size={13} color={Colors.accent} />
-                ) : (
-                  <Lock size={13} color={Colors.accent} />
-                )}
-                <Text style={styles.shareLinkText}>SHARE CARD</Text>
-              </Pressable>
-            </View>
-            <View style={{ gap: 12, marginTop: 14 }}>
-              {hallOfShame.map((it) => (
-                <Pressable
-                  key={it.key}
-                  onPress={() => router.push(`/item/${it.key}`)}
-                  style={({ pressed }) => [styles.hosRow, pressed && { backgroundColor: Colors.muted }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${it.name}, ${fmtPct(it.pctChange)} increase`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.hosName}>{it.name}</Text>
-                    <Text style={styles.subtleSmall}>+{fmtUSD(it.cumulativeOverspend)} extra this month</Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text style={styles.hosPct}>{fmtPct(it.pctChange)}</Text>
-                    <Text style={styles.hosVs}>
-                      {it.firstFromBaseline ? "VS. BASELINE" : "VS. FIRST SCAN"}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </Animated.View>
-        ) : null}
-
-        {/* ===== EXTRA SPEND STATEMENT ===== */}
-        {totalDelta > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(280)} style={[styles.statement, { marginHorizontal: 24 }]} accessibilityLabel={`Inflation has cost you an extra ${fmtUSD(totalDelta)} this month`}>
-            <Text style={styles.statementText}>
-              Inflation has cost you an extra{" "}
-              <Text style={styles.statementAccent}>{fmtUSD(totalDelta)}</Text> this month vs. your
-              baseline.
-            </Text>
-          </Animated.View>
-        ) : null}
-
-        {/* ===== NEXT TRIP ESTIMATE (secondary) ===== */}
-        {tripEstimate > 0 && avgBasket > 0 ? (
-          <Animated.View entering={FadeInDown.duration(400).delay(320)} style={[styles.section, { marginHorizontal: 24 }]} accessibilityLabel={`Next trip estimated at ${fmtUSD(tripEstimate)}`}>
-            <Text style={styles.kicker}>NEXT TRIP ESTIMATE</Text>
-            <Text style={styles.estimateValue}>{fmtUSD(tripEstimate)}</Text>
-            <Text style={styles.subtleSmall}>
-              Avg basket ({fmtUSD(avgBasket)}) × personal inflation rate
-            </Text>
-          </Animated.View>
-        ) : null}
-
-        {/* ===== RECENT EVIDENCE BUTTON ===== */}
-        <Animated.View entering={FadeInDown.duration(400).delay(380)} style={[styles.section, { marginHorizontal: 24 }]}>
+        {/* ===== RECENT EVIDENCE — The Proof ===== */}
+        <Animated.View entering={FadeInDown.duration(400).delay(240)} style={[styles.section, { marginHorizontal: 24 }]}>
           <Pressable
             onPress={() => setEvidenceOpen(true)}
             style={({ pressed }) => [styles.evidenceTrigger, pressed && { backgroundColor: Colors.muted }]}
@@ -455,7 +370,6 @@ export default function Dashboard() {
         </Animated.View>
       </ScrollView>
       </ErrorBoundary>
-      <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" totalExtra={totalDelta} />
       <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? spikeTarget : undefined} />
     </View>
   );
@@ -474,7 +388,6 @@ function RecentEvidenceModal({
 }) {
   const insets = useSafeAreaInsets();
 
-  // Find the two specific receipts that caused the biggest price spike.
   const spikePair = useMemo(() => {
     if (!spikeItem || spikeItem.history.length < 2) return null;
     let bestPair: { prev: (typeof spikeItem.history)[0]; cur: (typeof spikeItem.history)[0]; pct: number } | null = null;
@@ -633,7 +546,7 @@ function EmptyState() {
         {([
           ["Real Cost", "We track what it actually cost you.", () => <CircleDollarSign size={18} color={Colors.accent} strokeWidth={1.8} />],
           ["Real You", "Compared only to your own history.", () => <Hash size={18} color={Colors.accent} strokeWidth={1.8} />],
-          ["On-Device", "Receipts never leave your phone.", () => <Lock size={18} color={Colors.accent} strokeWidth={1.8} />],
+          ["On-Device", "Receipts never leave your phone.", () => <Zap size={18} color={Colors.accent} strokeWidth={1.8} />],
         ] as const).map(([title, body, renderIcon]) => {
           const cardContent = (
             <View style={styles.featureCard}>
@@ -666,68 +579,6 @@ const styles = StyleSheet.create({
   },
   brand: { fontFamily: Fonts.mono, fontSize: 13, letterSpacing: 1, color: Colors.foreground },
   gearBtn: { padding: 4, borderRadius: Radius.full },
-
-  /* ========== PERSONAL INFLATION RATE CARD ========== */
-  inflationCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xxl,
-    borderWidth: 1,
-    padding: 24,
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  inflationKicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.accent },
-  inflationValue: {
-    marginTop: 10,
-    fontFamily: Fonts.extrabold,
-    fontSize: 52,
-    lineHeight: 54,
-    letterSpacing: -2,
-    color: Colors.accent,
-    fontVariant: ["tabular-nums"],
-  },
-  inflationHint: { marginTop: 8, fontFamily: Fonts.regular, fontSize: 12.5, lineHeight: 18, color: Colors.mutedForeground },
-  inflationBar: {
-    marginTop: 16,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: Colors.muted,
-    overflow: "hidden",
-  },
-  inflationBarFill: { height: "100%", borderRadius: 999 },
-
-  /* ========== INFLATION ALERT TICKER ========== */
-  tickerTrack: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.foreground,
-    borderRadius: Radius.full,
-    paddingLeft: 4,
-    paddingRight: 4,
-    paddingVertical: 4,
-    overflow: "hidden",
-  },
-  tickerBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: Colors.accent,
-    borderRadius: Radius.full,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 4,
-  },
-  tickerBadgeText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.8, color: Colors.accentForeground },
-  tickerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  tickerItemName: { fontFamily: Fonts.semibold, fontSize: 12, letterSpacing: -0.2, color: Colors.background, maxWidth: 100 },
-  tickerItemPct: { fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.accent },
 
   /* ========== HERO METRIC CARD ========== */
   heroCard: {
@@ -787,7 +638,42 @@ const styles = StyleSheet.create({
   trustSub: { marginTop: 12, fontFamily: Fonts.medium, fontSize: 13, color: Colors.mutedForeground, letterSpacing: -0.2 },
   trustBold: { fontFamily: Fonts.bold, color: Colors.foreground },
 
-  /* ========== PRICE ALERT (replaces Worst Offender) ========== */
+  /* ========== TOP 3 PRICE SPIKES ========== */
+  alertDotRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  alertDotText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 0.8, color: Colors.accent },
+  spikeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 14,
+    gap: 12,
+  },
+  spikeRowAlert: {
+    borderColor: Colors.accent,
+    borderWidth: 1.5,
+  },
+  spikeRank: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.muted,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  spikeRankNum: {
+    fontFamily: Fonts.bold,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+  },
+  spikeName: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
+  spikeMeta: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
+  spikePct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.foreground },
+  spikePerUnitLabel: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.5, color: Colors.mutedForeground },
+
+  /* ========== PRICE ALERT ========== */
   priceAlert: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
@@ -902,38 +788,10 @@ const styles = StyleSheet.create({
   dataCollectionText: { marginTop: 16, fontFamily: Fonts.medium, fontSize: 15, color: Colors.foreground, letterSpacing: -0.3 },
   dataCollectionHint: { marginTop: 6, fontFamily: Fonts.regular, fontSize: 12, color: Colors.mutedForeground },
 
-  /* ========== SHARED / LEGACY ========== */
+  /* ========== SHARED ========== */
   kicker: { fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.5, color: Colors.mutedForeground },
-  subtleSmall: { marginTop: 3, fontSize: 11.5, color: Colors.mutedForeground, fontFamily: Fonts.regular },
   section: { marginTop: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border, paddingTop: 18 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  shareLink: { flexDirection: "row", alignItems: "center", gap: 5 },
-  shareLinkText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, color: Colors.accent },
-  hosRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: 16,
-  },
-  hosName: { fontFamily: Fonts.bold, fontSize: 15, letterSpacing: -0.3, color: Colors.foreground },
-  hosPct: { fontFamily: Fonts.monoMedium, fontSize: 14, color: Colors.accent },
-  hosVs: { marginTop: 3, fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.5, color: Colors.mutedForeground },
-  /* ========== STATEMENT ========== */
-  statement: { marginTop: 36, backgroundColor: Colors.foreground, borderRadius: Radius.xl, padding: 24 },
-  statementText: { fontFamily: Fonts.medium, fontSize: 20, lineHeight: 27, letterSpacing: -0.4, color: Colors.background },
-  statementAccent: { fontFamily: Fonts.extrabold, color: Colors.accent },
-  estimateValue: {
-    marginTop: 4,
-    fontFamily: Fonts.extrabold,
-    fontSize: 28,
-    letterSpacing: -1,
-    color: Colors.foreground,
-    fontVariant: ["tabular-nums"],
-  },
   evidenceTrigger: {
     flexDirection: "row",
     alignItems: "center",
