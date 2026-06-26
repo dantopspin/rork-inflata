@@ -22,6 +22,10 @@ const ABBREV: Record<string, string> = {
   CHKN: "CHICKEN",
   GRK: "GREEK",
   OJ: "ORANGE JUICE",
+  FRTSN: "FRUIT SNACKS",
+  MOTTS: "MOTTS",
+  GLDN: "GOLDEN",
+  DELX: "DELUXE",
 };
 
 // Weights, volumes, package sizes — stripped because they don't affect product identity.

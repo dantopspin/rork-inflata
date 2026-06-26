@@ -41,7 +41,7 @@ import { useApp } from "@/providers/AppProvider";
 import { Scan } from "@/types";
 
 type Stage = "permission" | "camera" | "scanning" | "review" | "saved" | "discovery" | "error";
-type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string; unitQuantity?: number; unitMeasure?: string };
+type Editable = { id: string; rawName: string; name: string; priceStr: string; itemKey: string; unitQuantity?: number; unitMeasure?: string; category?: string };
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -115,6 +115,7 @@ export default function ScanScreen() {
             itemKey: n.key,
             unitQuantity: item.unit_quantity,
             unitMeasure: item.unit_measure,
+            category: item.category,
           };
         }),
       );
@@ -162,6 +163,7 @@ export default function ScanScreen() {
             itemKey: n.key,
             unitQuantity: item.unit_quantity,
             unitMeasure: item.unit_measure,
+            category: item.category,
           };
         }),
       );
@@ -190,6 +192,7 @@ export default function ScanScreen() {
         originalStoreName: scanStore,
         unitQuantity: i.unitQuantity,
         unitMeasure: i.unitMeasure,
+        category: i.category,
       }))
       .filter((i) => i.name && Number.isFinite(i.price) && i.price > 0);
 

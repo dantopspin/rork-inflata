@@ -151,6 +151,9 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       // stays "low" otherwise
     }
 
+    // --- Sanity filter: flag outlier price changes (>100%) as likely data errors ---
+    const isOutlier = Math.abs(pct) > 100;
+
     stats.push({
       key,
       name: last.name,
@@ -175,6 +178,7 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
       unitMeasure: lastUnitEntry?.unitMeasure,
       totalSpend,
       isSmartSave: isSmartSave || undefined,
+      isOutlier: isOutlier || undefined,
       unitPriceChange,
       unitPriceConfidence: unitEntries.length >= 2 ? unitPriceConfidence : undefined,
       history: entries.map((e) => ({

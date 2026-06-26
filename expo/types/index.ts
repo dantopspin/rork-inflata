@@ -8,6 +8,7 @@ export type ScanItem = {
   originalStoreName?: string; // store this item was scanned at
   unitQuantity?: number; // parsed quantity (e.g. 12 for "12ct eggs")
   unitMeasure?: string; // parsed unit (e.g. "oz", "ct", "lb")
+  category?: string; // AI-assigned category (Dairy, Meat, Produce, Pantry, Snacks)
 };
 
 export type Scan = {
@@ -49,6 +50,7 @@ export type ItemStat = {
   unitMeasure?: string; // most recent known unit of measure
   totalSpend: number; // total amount spent on this item across all real scans
   isSmartSave?: boolean; // user bought a cheaper brand/variant of a previously tracked item
+  isOutlier?: boolean; // true when raw price change >100% — likely OCR/data error, not a real trend
   unitPriceChange?: number; // percentage change in canonical unit price (first→last entry with unit data)
   unitPriceConfidence?: "low" | "medium" | "high"; // reliability of unit-price trend data
   history: { date: string; price: number; fromBaseline: boolean; store: string; canonicalUnitPrice?: number }[];

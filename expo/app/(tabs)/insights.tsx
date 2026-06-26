@@ -1,52 +1,31 @@
 import { BlurView } from "expo-blur";
-import { Lock } from "lucide-react-native";
+import { Lock, AlertTriangle, ArrowRight } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
-import { aggregateItems } from "@/lib/inflation";
+import { fmtUSD } from "@/lib/format";
+import { aggregateItems, nextTripEstimate } from "@/lib/inflation";
+import { STAPLES } from "@/lib/seed";
 import { useApp } from "@/providers/AppProvider";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-// Keyword maps for category inference
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  Dairy:   ["milk","butter","cheese","yogurt","cream","eggs","egg","cheddar","mozzarella","brie","kefir","whey"],
-  Meat:    ["chicken","beef","pork","turkey","salmon","shrimp","steak","lamb","bacon","sausage","tuna","tilapia","cod","ham"],
-  Produce: ["banana","apple","lettuce","tomato","onion","pepper","carrot","broccoli","spinach","avocado","potato","grape","berry","orange","lemon","lime","cucumber","zucchini","mushroom","celery","kale","mango","peach","pear","corn","asparagus"],
+// National average basket: sum of all STAPLES prices as a loose comparison point
+const NATIONAL_AVG_BASKET = STAPLES.reduce((sum, s) => sum + s.avgPrice, 0);
+
+// Category colours — distinct, high-contrast
+const CAT_COLORS: Record<string, string> = {
+  Dairy:   "#F5E6D3",
+  Meat:    "#FAD7D1",
+  Produce: "#DDF4D9",
+  Pantry:  "#E3E0D8",
+  Snacks:  "#FBE4D0",
 };
-
-function inferCategory(name: string): string {
-  const lower = name.toLowerCase();
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => lower.includes(kw))) return cat;
-  }
-  return "Pantry";
-}
-
-function computeCategories(scans: ReturnType<typeof useApp>["scans"]): [string, number][] | null {
-  let total = 0;
-  const sums: Record<string, number> = { Dairy: 0, Meat: 0, Produce: 0, Pantry: 0 };
-
-  for (const s of scans) {
-    if (s.source !== "scan") continue;
-    for (const it of s.items) {
-      const cat = inferCategory(it.name);
-      sums[cat] += it.price;
-      total += it.price;
-    }
-  }
-
-  if (total === 0) return null; // no real scan data — hide section
-
-  return Object.entries(sums)
-    .map(([label, sum]): [string, number] => [label, Math.round((sum / total) * 100)])
-    .filter(([, pct]) => pct > 0)
-    .sort(([, a], [, b]) => b - a);
-}
 
 // Realistic demo data — non-linear, looks like real grocery spend
 const DEMO_MONTHLY: [string, number][] = [
@@ -57,12 +36,12 @@ const DEMO_MONTHLY: [string, number][] = [
   ["2026-05", 407],
   ["2026-06", 389],
 ];
-const DEMO_VOLATILE = [
-  { key: "eggs",           name: "Eggs",           pctChange: 41  },
-  { key: "butter",         name: "Butter",          pctChange: 28  },
-  { key: "milk",           name: "Whole Milk",      pctChange: 18  },
-  { key: "chicken-breast", name: "Chicken Breast",  pctChange: 12  },
-  { key: "bananas",        name: "Bananas",         pctChange: -3  },
+const DEMO_VOLATILE: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] = [
+  { key: "eggs",           name: "Eggs",           pctChange: 41,  unitPrice: 0.35, unitMeasure: "each" },
+  { key: "butter",         name: "Butter",          pctChange: 28,  unitPrice: 0.62, unitMeasure: "oz" },
+  { key: "milk",           name: "Whole Milk",      pctChange: 18,  unitPrice: 0.03, unitMeasure: "fl oz" },
+  { key: "chicken-breast", name: "Chicken Breast",  pctChange: 12,  unitPrice: 0.31, unitMeasure: "oz" },
+  { key: "bananas",        name: "Bananas",         pctChange: -3,  unitPrice: 0.04, unitMeasure: "oz" },
 ];
 const DEMO_CATEGORIES: [string, number][] = [
   ["Dairy",   38],
@@ -77,14 +56,36 @@ function labelMonth(yyyyMm: string): string {
 }
 
 function pctColor(pct: number): string {
-  if (pct > 0) return Colors.accent;      // red-orange — bad, price rose
-  if (pct < 0) return "#22a06b";          // green — good, price fell
+  if (pct > 0) return Colors.accent;
+  if (pct < 0) return "#22a06b";
   return Colors.mutedForeground;
+}
+
+/** Compute category breakdown from AI-assigned categories. Falls back to "Pantry" if missing. */
+function computeCategories(scans: ReturnType<typeof useApp>["scans"]): [string, number][] | null {
+  let total = 0;
+  const sums: Record<string, number> = { Dairy: 0, Meat: 0, Produce: 0, Pantry: 0, Snacks: 0 };
+
+  for (const s of scans) {
+    if (s.source !== "scan") continue;
+    for (const it of s.items) {
+      const cat = it.category || "Pantry";
+      sums[cat] = (sums[cat] ?? 0) + it.price;
+      total += it.price;
+    }
+  }
+
+  if (total === 0) return null;
+
+  return Object.entries(sums)
+    .map(([label, sum]): [string, number] => [label, Math.round((sum / total) * 100)])
+    .filter(([, pct]) => pct > 0)
+    .sort(([, a], [, b]) => b - a);
 }
 
 export default function Insights() {
   const insets = useSafeAreaInsets();
-  const { subscribed, scans } = useApp();
+  const { subscribed, scans, frequency } = useApp();
   const [paywall, setPaywall] = useState(false);
 
   const monthly = useMemo(() => {
@@ -102,18 +103,70 @@ export default function Insights() {
     const stats = aggregateItems(scans);
     return stats
       .filter((s) => s.history.length >= 2)
-      .sort((a, b) => Math.abs(b.pctChange) - Math.abs(a.pctChange))
+      .sort((a, b) => {
+        // Prefer unit-price change for volatility ranking when available
+        const aVal = Math.abs(a.unitPriceChange ?? a.pctChange);
+        const bVal = Math.abs(b.unitPriceChange ?? b.pctChange);
+        return bVal - aVal;
+      })
       .slice(0, 5);
   }, [scans]);
 
   const categories = useMemo(() => computeCategories(scans), [scans]);
 
-  const monthlyData  = monthly.length ? monthly : DEMO_MONTHLY;
+  // Projected next trip estimate
+  const stats = useMemo(() => aggregateItems(scans), [scans]);
+  const projectedNext = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
+
+  const monthlyData = monthly.length ? monthly : DEMO_MONTHLY;
   const volatileData = volatile.length
-    ? volatile.map((v) => ({ key: v.key, name: v.name, pctChange: v.pctChange }))
+    ? volatile.map((v) => ({
+        key: v.key,
+        name: v.name,
+        pctChange: v.unitPriceChange ?? v.pctChange,
+        unitPrice: v.canonicalUnitPrice,
+        unitMeasure: v.unitMeasure,
+        isOutlier: v.isOutlier ?? false,
+      }))
     : DEMO_VOLATILE;
   const categoryData = categories ?? (subscribed ? null : DEMO_CATEGORIES);
-  const maxSpend     = Math.max(1, ...monthlyData.map(([, v]) => v));
+
+  // --- Chart computations ---
+  const maxSpend = Math.max(
+    1,
+    ...monthlyData.map(([, v]) => v),
+    NATIONAL_AVG_BASKET,
+    projectedNext,
+  );
+
+  // Month-over-month % changes for accessibility
+  const momPcts = useMemo(() => {
+    const pcts: (number | null)[] = [null]; // first month has no prior
+    for (let i = 1; i < monthlyData.length; i++) {
+      const prev = monthlyData[i - 1][1];
+      const cur = monthlyData[i][1];
+      pcts.push(prev > 0 ? ((cur - prev) / prev) * 100 : null);
+    }
+    return pcts;
+  }, [monthlyData]);
+
+  // Build an accessible label for the chart
+  const chartAccessibilityLabel = useMemo(() => {
+    const parts = monthlyData.map(([k, v], i) => {
+      const month = labelMonth(k);
+      const mom = momPcts[i];
+      if (mom !== null) {
+        const dir = mom > 0 ? "up" : mom < 0 ? "down" : "flat";
+        return `${month}: $${v.toFixed(0)}, ${dir} ${Math.abs(mom).toFixed(0)}% from prior`;
+      }
+      return `${month}: $${v.toFixed(0)}`;
+    });
+    if (projectedNext > 0) parts.push(`Projected: $${projectedNext.toFixed(0)}`);
+    if (monthlyData.length <= 1) parts.push(`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`);
+    return `Monthly spend chart. ${parts.join(". ")}. Highest month: $${maxSpend.toFixed(0)}`;
+  }, [monthlyData, momPcts, projectedNext, maxSpend]);
+
+  const showNationalAvg = monthlyData.length <= 1;
 
   return (
     <View style={styles.screen}>
@@ -133,32 +186,103 @@ export default function Insights() {
           <View style={{ pointerEvents: subscribed ? "auto" : "none" }}>
 
             {/* ── Monthly spend bar chart ── */}
-            <View style={styles.card} accessibilityLabel={`Monthly spend chart. Highest month: $${maxSpend.toFixed(0)}`}>
+            <View style={styles.card} accessibilityLabel={chartAccessibilityLabel}>
               <Text style={styles.cardKicker}>MONTHLY SPEND</Text>
+              <View style={styles.legend}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: Colors.accent }]} />
+                  <Text style={styles.legendText}>Actual</Text>
+                </View>
+                {projectedNext > 0 && (
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: Colors.mutedForeground, opacity: 0.5 }]} />
+                    <Text style={styles.legendText}>Projected</Text>
+                  </View>
+                )}
+                {showNationalAvg && (
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: Colors.border, borderWidth: 1, borderColor: Colors.mutedForeground }]} />
+                    <Text style={styles.legendText}>Nat'l Avg</Text>
+                  </View>
+                )}
+              </View>
               <View style={styles.chart}>
-                {monthlyData.map(([k, v], i) => (
-                  <View key={k} style={styles.barCol} accessibilityLabel={`${labelMonth(k)}: $${v.toFixed(0)}`}>
+                {/* National average ghost bar — only shown when 0-1 real months */}
+                {showNationalAvg && (
+                  <View key="natavg" style={styles.barCol} accessibilityLabel={`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`}>
                     <View style={styles.barTrack}>
-                      <Animated.View
-                        entering={FadeInDown.duration(500).delay(i * 60)}
-                        style={[styles.bar, { height: `${(v / maxSpend) * 100}%` }]}
+                      <View
+                        style={[
+                          styles.bar,
+                          styles.ghostBar,
+                          { height: `${(NATIONAL_AVG_BASKET / maxSpend) * 100}%` },
+                        ]}
                       />
                     </View>
                     <Text style={styles.barLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                      {labelMonth(k)}
+                      NAT'L AVG
                     </Text>
                   </View>
-                ))}
+                )}
+
+                {monthlyData.map(([k, v], i) => {
+                  const mom = momPcts[i];
+                  const pctLabel = mom !== null ? ` (${mom > 0 ? "+" : ""}${mom.toFixed(0)}%)` : "";
+                  return (
+                    <View key={k} style={styles.barCol} accessibilityLabel={`${labelMonth(k)}: $${v.toFixed(0)}${pctLabel}`}>
+                      <View style={styles.barTrack}>
+                        <Animated.View
+                          entering={FadeInDown.duration(500).delay(i * 60)}
+                          style={[styles.bar, { height: `${(v / maxSpend) * 100}%` }]}
+                        />
+                      </View>
+                      <Text style={styles.barLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                        {labelMonth(k)}
+                      </Text>
+                    </View>
+                  );
+                })}
+
+                {/* Projected next month bar */}
+                {projectedNext > 0 && (
+                  <View key="proj" style={styles.barCol} accessibilityLabel={`Projected next month: $${projectedNext.toFixed(0)}`}>
+                    <View style={styles.barTrack}>
+                      <Animated.View
+                        entering={FadeInDown.duration(500).delay(monthlyData.length * 60)}
+                        style={[styles.bar, styles.projectedBar, { height: `${(projectedNext / maxSpend) * 100}%` }]}
+                      />
+                    </View>
+                    <Text style={[styles.barLabel, styles.projectedLabel]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                      PROJ
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
             {/* ── Most volatile ── */}
             <Text style={[styles.cardKicker, { marginTop: 28 }]}>MOST VOLATILE</Text>
+            <Text style={styles.volatileSubtitle}>Unit-price changes, highest Δ first</Text>
             <View style={{ gap: 8, marginTop: 12 }}>
               {volatileData.map((v) => (
-                <View key={v.key} style={styles.volatileRow}>
-                  <Text style={styles.volatileName}>{v.name}</Text>
-                  <Text style={[styles.volatilePct, { color: pctColor(v.pctChange) }]}>
+                <View key={v.key} style={[styles.volatileRow, v.isOutlier && styles.volatileRowOutlier]}>
+                  <View style={styles.volatileLeft}>
+                    <Text style={[styles.volatileName, v.isOutlier && { color: Colors.destructive }]}>
+                      {v.name}
+                    </Text>
+                    {v.unitPrice != null && v.unitMeasure ? (
+                      <Text style={styles.unitPriceLabel}>
+                        {fmtUSD(v.unitPrice)}/{v.unitMeasure}
+                      </Text>
+                    ) : null}
+                    {v.isOutlier && (
+                      <View style={styles.outlierBadge}>
+                        <AlertTriangle size={10} color={Colors.destructive} />
+                        <Text style={styles.outlierText}>POTENTIAL DATA ERROR</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.volatilePct, { color: v.isOutlier ? Colors.destructive : pctColor(v.pctChange) }]}>
                     {v.pctChange > 0 ? "+" : ""}
                     {v.pctChange.toFixed(1)}%
                   </Text>
@@ -166,10 +290,11 @@ export default function Insights() {
               ))}
             </View>
 
-            {/* ── Category breakdown — only rendered when real data exists ── */}
+            {/* ── Category breakdown ── */}
             {categoryData && categoryData.length > 0 ? (
               <View style={[styles.card, { marginTop: 24 }]}>
                 <Text style={styles.cardKicker}>CATEGORY BREAKDOWN</Text>
+                <Text style={styles.volatileSubtitle}>AI-assigned from receipt line items</Text>
                 <View style={{ gap: 14, marginTop: 16 }}>
                   {categoryData.map(([label, pct]) => (
                     <View key={label}>
@@ -178,19 +303,36 @@ export default function Insights() {
                         <Text style={styles.catPct}>{pct}%</Text>
                       </View>
                       <View style={styles.catTrack}>
-                        <View style={[styles.catFill, { width: `${pct}%` }]} />
+                        <View
+                          style={[
+                            styles.catFill,
+                            { width: `${pct}%`, backgroundColor: CAT_COLORS[label] ?? Colors.mutedForeground },
+                          ]}
+                        />
                       </View>
                     </View>
                   ))}
                 </View>
               </View>
             ) : subscribed ? (
-              // Subscribed but no scan data yet — show empty state, not fake data
+              // Subscribed but no scan data yet — show empty state with CTA
               <View style={[styles.card, { marginTop: 24, alignItems: "center", paddingVertical: 28 }]}>
                 <Text style={styles.cardKicker}>CATEGORY BREAKDOWN</Text>
                 <Text style={[styles.emptyHint, { marginTop: 12 }]}>
                   Scan more receipts to see how your spend breaks down by category.
                 </Text>
+                <Pressable
+                  onPress={() => router.push("/scan")}
+                  style={({ pressed }) => [
+                    styles.startScanBtn,
+                    pressed && { transform: [{ scale: 0.97 }] },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start scanning receipts"
+                >
+                  <Text style={styles.startScanBtnText}>START SCANNING</Text>
+                  <ArrowRight size={16} color={Colors.accentForeground} />
+                </Pressable>
               </View>
             ) : null}
           </View>
@@ -260,6 +402,12 @@ const styles = StyleSheet.create({
     color: Colors.mutedForeground,
   },
 
+  // Legend
+  legend: { flexDirection: "row", gap: 16, marginTop: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 999 },
+  legendText: { fontSize: 10, fontFamily: Fonts.mono, color: Colors.mutedForeground },
+
   // Bar chart
   chart: {
     marginTop: 16,
@@ -276,6 +424,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 6,
     borderTopRightRadius: 6,
   },
+  ghostBar: {
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: Colors.mutedForeground,
+    borderStyle: "dashed",
+    borderRadius: 6,
+  },
+  projectedBar: {
+    backgroundColor: Colors.mutedForeground,
+    opacity: 0.45,
+  },
   barLabel: {
     fontFamily: Fonts.mono,
     fontSize: 9,
@@ -283,8 +442,18 @@ const styles = StyleSheet.create({
     color: Colors.mutedForeground,
     maxWidth: 44,
   },
+  projectedLabel: {
+    color: Colors.mutedForeground,
+    opacity: 0.6,
+  },
 
   // Volatile rows
+  volatileSubtitle: {
+    marginTop: 2,
+    fontFamily: Fonts.regular,
+    fontSize: 11,
+    color: Colors.mutedForeground,
+  },
   volatileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -295,15 +464,39 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: 14,
   },
+  volatileRowOutlier: {
+    borderColor: Colors.destructive,
+    borderWidth: 1.5,
+    backgroundColor: Colors.accentSoft,
+  },
+  volatileLeft: { flex: 1, gap: 3 },
   volatileName: {
     fontFamily: Fonts.bold,
     fontSize: 14,
     color: Colors.foreground,
   },
+  unitPriceLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    color: Colors.mutedForeground,
+  },
   volatilePct: {
     fontFamily: Fonts.monoMedium,
     fontSize: 14,
-    // color set dynamically via pctColor()
+  },
+
+  // Outlier badge
+  outlierBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  outlierText: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    color: Colors.destructive,
+    letterSpacing: 0.3,
   },
 
   // Category breakdown
@@ -321,8 +514,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.muted,
     overflow: "hidden",
   },
-  catFill: { height: "100%", backgroundColor: Colors.foreground, borderRadius: 999 },
+  catFill: { height: "100%", borderRadius: 999 },
 
+  // Empty state
   emptyHint: {
     fontSize: 13,
     fontFamily: Fonts.regular,
@@ -330,6 +524,27 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
     maxWidth: 240,
+  },
+  startScanBtn: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 44,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: Colors.accent,
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  startScanBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: Colors.accentForeground,
   },
 
   // Paywall overlay

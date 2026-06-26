@@ -5,13 +5,13 @@ const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
 const MODEL = "google/gemini-3.1-flash-lite";
 
-const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Extract the store name from the receipt header and every line item with its price, quantity, and unit of measure.
+const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Extract the store name from the receipt header and every line item with its price, quantity, unit of measure, and grocery category.
 
 Return ONLY valid JSON — no markdown, no explanation:
 {
   "store": "Store Name",
   "items": [
-    { "name": "ITEM NAME", "price": 0.00, "unit_quantity": 12, "unit_measure": "ct" }
+    { "name": "ITEM NAME", "price": 0.00, "unit_quantity": 12, "unit_measure": "ct", "category": "Dairy" }
   ]
 }
 
@@ -21,11 +21,12 @@ Rules:
 - Prices: numeric only, no currency symbols. For example 4.99 not "$4.99".
 - Names: clean product names — strip store codes but keep size info (e.g. "Large Eggs 12ct").
 - unit_quantity: extract the numeric count/size (e.g. 12 for "12ct", 16 for "16oz", 1 for "1 gal"). Omit if no quantity is visible.
-- unit_measure: the unit label found on the line (e.g. "ct", "oz", "lb", "gal", "each"). Omit if no unit is visible.`;
+- unit_measure: the unit label found on the line (e.g. "ct", "oz", "lb", "gal", "each"). Omit if no unit is visible.
+- category: one of "Dairy", "Meat", "Produce", "Pantry", "Snacks" — based on what the product actually is. For example eggs→Dairy, chicken→Meat, lettuce→Produce, pasta→Pantry, chips→Snacks.`;
 
 export type OcrResult = {
   store: string;
-  items: { name: string; price: number; unit_quantity?: number; unit_measure?: string }[];
+  items: { name: string; price: number; unit_quantity?: number; unit_measure?: string; category?: string }[];
 };
 
 /**
@@ -100,7 +101,8 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
     throw new Error("OCR response missing store or items");
   }
 
-  // Validate and clean items — preserve unit quantity/measure when present
+  // Validate and clean items — preserve unit quantity/measure and category when present
+  const VALID_CATEGORIES = new Set(["Dairy", "Meat", "Produce", "Pantry", "Snacks"]);
   const items = json.items
     .map((item) => ({
       name: String(item.name ?? "").trim(),
@@ -109,6 +111,7 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
         ? Number(item.unit_quantity)
         : undefined,
       unit_measure: item.unit_measure ? String(item.unit_measure).trim().toLowerCase() || undefined : undefined,
+      category: item.category && VALID_CATEGORIES.has(String(item.category).trim()) ? String(item.category).trim() : undefined,
     }))
     .filter((item) => item.name && Number.isFinite(item.price) && item.price > 0);
 
