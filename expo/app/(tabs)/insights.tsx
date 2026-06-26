@@ -6,6 +6,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtUSD } from "@/lib/format";
@@ -192,6 +193,7 @@ export default function Insights() {
 
   return (
     <View style={styles.screen}>
+      <ErrorBoundary>
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 24,
@@ -382,6 +384,7 @@ export default function Insights() {
           )}
         </View>
       </ScrollView>
+      </ErrorBoundary>
 
       <PaywallSheet
         open={paywall && !subscribed}

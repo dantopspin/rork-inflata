@@ -8,6 +8,7 @@ import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtDate, fmtDateLong, fmtPct, fmtUSD } from "@/lib/format";
@@ -104,6 +105,7 @@ export default function Dashboard() {
   return (
     <View style={styles.screen}>
       <Header />
+      <ErrorBoundary>
       <ScrollView
         contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 120 }}
         showsVerticalScrollIndicator={false}
@@ -452,7 +454,7 @@ export default function Dashboard() {
           </Pressable>
         </Animated.View>
       </ScrollView>
-
+      </ErrorBoundary>
       <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" totalExtra={totalDelta} />
       <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? spikeTarget : undefined} />
     </View>

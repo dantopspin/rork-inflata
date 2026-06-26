@@ -361,30 +361,34 @@ export default function ScanScreen() {
           </View>
           <Text style={styles.scanningKicker}>SCAN FAILED</Text>
           <Text style={styles.scanningTitle}>
-            {errorMessage.includes("INVALID_IMAGE")
-              ? "Please scan a clear receipt."
-              : errorMessage.includes("TIMEOUT")
-                ? "Request timed out. Check your connection."
-                : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
-                  ? "Authentication error. Check app configuration."
-                  : errorMessage.includes("HTTP_404")
-                    ? "OCR model not found. Check model configuration."
-                    : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
-                      ? "Image too large. Try a smaller receipt."
-                      : "Couldn't read this receipt."}
+            {errorMessage.includes("OFFLINE")
+              ? "No internet connection."
+              : errorMessage.includes("INVALID_IMAGE")
+                ? "Please scan a clear receipt."
+                : errorMessage.includes("TIMEOUT")
+                  ? "Request timed out. Check your connection."
+                  : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                    ? "Authentication error. Check app configuration."
+                    : errorMessage.includes("HTTP_404")
+                      ? "OCR model not found. Check model configuration."
+                      : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                        ? "Image too large. Try a smaller receipt."
+                        : "Couldn't read this receipt."}
           </Text>
           <Text style={styles.scanningHint}>
-            {errorMessage.includes("INVALID_IMAGE")
-              ? "This doesn't look like a grocery receipt. Try a different image."
-              : errorMessage.includes("TIMEOUT")
-                ? "The server took too long to respond. Please try again."
-                : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
-                  ? "The app is missing a valid API key. Please contact support."
-                  : errorMessage.includes("HTTP_404")
-                    ? "The AI model is misconfigured. Please contact support."
-                    : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
-                      ? "Try cropping to just the receipt area."
-                      : "Try again with better lighting and a flat surface."}
+            {errorMessage.includes("OFFLINE")
+              ? "Scanning requires a connection to process your receipt. Please connect to Wi-Fi or mobile data and try again."
+              : errorMessage.includes("INVALID_IMAGE")
+                ? "This doesn't look like a grocery receipt. Try a different image."
+                : errorMessage.includes("TIMEOUT")
+                  ? "The server took too long to respond. Please try again."
+                  : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                    ? "The app is missing a valid API key. Please contact support."
+                    : errorMessage.includes("HTTP_404")
+                      ? "The AI model is misconfigured. Please contact support."
+                      : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                        ? "Try cropping to just the receipt area."
+                        : "Try again with better lighting and a flat surface."}
           </Text>
           <Pressable
             onPress={retryCapture}

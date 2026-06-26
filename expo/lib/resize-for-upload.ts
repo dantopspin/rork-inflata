@@ -1,30 +1,84 @@
 import { manipulateAsync, SaveFormat, type Action } from "expo-image-manipulator";
 import { Image } from "react-native";
 
-const DEFAULT_MAX_BYTES = 3_000_000;
+const MAX_EDGE = 1600;
+const JPEG_QUALITY = 0.82;
+const RETRY_QUALITY = 0.7;
+const MAX_BASE64_BYTES = 4_000_000; // 4 MB
 
-type LadderStep = { width: number; compress: number };
+/**
+ * Resize an image URI into a raw-base64 JPEG optimized for receipt OCR.
+ * - Longest edge capped at 1600px (no upscaling).
+ * - Compressed to JPEG at quality 0.82.
+ * - If the result exceeds 4 MB, retries once at quality 0.70.
+ * - Throws IMAGE_TOO_LARGE if still too large after retry.
+ */
+export async function resizeForUpload(
+  imageUri: string,
+): Promise<{ base64: string; mimeType: "image/jpeg" }> {
+  // Resize: scale longest edge to MAX_EDGE if the image is larger.
+  const actions: Action[] = [];
+  // expo-image-manipulator's resize action uses width; we'll compute it
+  // below after detecting the aspect ratio. For now, set a safe width
+  // that caps the longest edge.
 
-// Standard ladder for regular receipts and images.
-const LADDER: LadderStep[] = [
-  { width: 1280, compress: 0.82 },
-  { width: 1024, compress: 0.78 },
-  { width: 832, compress: 0.74 },
-  { width: 640, compress: 0.7 },
-  { width: 512, compress: 0.65 },
-];
+  const resizeWithQuality = async (compress: number): Promise<{ base64: string; width: number; height: number } | null> => {
+    const result = await manipulateAsync(imageUri, actions, {
+      format: SaveFormat.JPEG,
+      compress,
+      base64: true,
+    });
 
-// Long-receipt ladder: uses larger widths to preserve text legibility
-// when the image is very tall (height > 2× width).
-const LONG_RECEIPT_LADDER: LadderStep[] = [
-  { width: 1600, compress: 0.85 },
-  { width: 1400, compress: 0.82 },
-  { width: 1200, compress: 0.78 },
-  { width: 1024, compress: 0.74 },
-  { width: 832, compress: 0.7 },
-];
+    if (result.base64) {
+      // Strip data URI prefix if present
+      const b64 = stripDataUriPrefix(result.base64);
+      const byteLen = base64ByteLength(b64);
+      if (byteLen <= MAX_BASE64_BYTES) {
+        if (__DEV__) {
+          console.log("[resize]", {
+            width: result.width,
+            height: result.height,
+            base64Kb: byteLen / 1024,
+          });
+        }
+        return { base64: b64, width: result.width, height: result.height };
+      }
+    }
+    return null;
+  };
 
-/** Resolve image dimensions so we can detect long receipts before resizing. */
+  // Step 1: resize to cap longest edge at 1600px
+  const size = await getImageSize(imageUri);
+  const { width: origW, height: origH } = size;
+
+  if (origW > MAX_EDGE || origH > MAX_EDGE) {
+    const ratio = Math.min(MAX_EDGE / origW, MAX_EDGE / origH);
+    if (ratio < 1) {
+      actions.push({ resize: { width: Math.round(origW * ratio) } });
+    }
+  }
+
+  // Attempt 1: quality 0.82
+  let result = await resizeWithQuality(JPEG_QUALITY);
+  if (result) {
+    return { base64: result.base64, mimeType: "image/jpeg" };
+  }
+
+  // Attempt 2: quality 0.70
+  result = await resizeWithQuality(RETRY_QUALITY);
+  if (result) {
+    return { base64: result.base64, mimeType: "image/jpeg" };
+  }
+
+  // Still too large — throw
+  const err = new Error(
+    "Receipt image is too large to process. Please try in better lighting or move closer.",
+  );
+  (err as any).code = "IMAGE_TOO_LARGE";
+  throw err;
+}
+
+/** Resolve image dimensions so we can compute the correct resize ratio. */
 function getImageSize(uri: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     Image.getSize(
@@ -35,7 +89,7 @@ function getImageSize(uri: string): Promise<{ width: number; height: number }> {
   });
 }
 
-/** Calculate raw byte length of a base64 string without the Buffer polyfill. */
+/** Calculate raw byte length of a base64 string. */
 function base64ByteLength(b64: string): number {
   let padding = 0;
   if (b64.endsWith("==")) padding = 2;
@@ -43,51 +97,9 @@ function base64ByteLength(b64: string): number {
   return (b64.length / 4) * 3 - padding;
 }
 
-const stripDataUriPrefix = (b64: string): string => {
+/** Strip the data URI prefix (e.g. "data:image/jpeg;base64,") from a base64 string. */
+function stripDataUriPrefix(b64: string): string {
   if (!b64.startsWith("data:")) return b64;
   const comma = b64.indexOf(",");
   return comma === -1 ? b64 : b64.slice(comma + 1);
-};
-
-/**
- * Resize an Expo image URI into a raw-base64 JPEG that fits inside the Vercel
- * request-body limit for image input requests.
- */
-export async function resizeForUpload(
-  imageUri: string,
-  maxBytes: number = DEFAULT_MAX_BYTES,
-): Promise<{ base64: string; mimeType: "image/jpeg" }> {
-  // Detect long receipts (height > 2× width) and use a wider ladder to
-  // preserve text legibility. A narrow resize on a tall receipt makes
-  // OCR unreadable.
-  let ladder = LADDER;
-  try {
-    const size = await getImageSize(imageUri);
-    if (size.height > size.width * 2) {
-      ladder = LONG_RECEIPT_LADDER;
-    }
-  } catch {
-    // Image.getSize failed — fall back to the standard ladder.
-  }
-
-  for (const step of ladder) {
-    const actions: Action[] = [{ resize: { width: step.width } }];
-
-    const result = await manipulateAsync(imageUri, actions, {
-      format: SaveFormat.JPEG,
-      compress: step.compress,
-      base64: true,
-    });
-
-    if (result.base64 && base64ByteLength(result.base64) <= maxBytes) {
-      return {
-        base64: stripDataUriPrefix(result.base64),
-        mimeType: "image/jpeg" as const,
-      };
-    }
-  }
-
-  const err = new Error("Image too large. Try cropping to just the receipt area.");
-  (err as any).code = "IMAGE_TOO_LARGE";
-  throw err;
 }

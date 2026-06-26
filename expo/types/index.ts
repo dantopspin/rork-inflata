@@ -10,6 +10,7 @@ export type ScanItem = {
   unitMeasure?: string; // parsed unit (e.g. "oz", "ct", "lb")
   category?: string; // AI-assigned category (Dairy, Meat, Produce, Pantry, Snacks)
   type?: "regular" | "promo" | "discount"; // item type — promo/discount items may have price 0
+  isOutlier?: boolean; // true when raw price change >100% — likely OCR/data error
 };
 
 export type Scan = {

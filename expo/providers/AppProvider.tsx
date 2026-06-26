@@ -2,6 +2,7 @@ import createContextHook from "@nkzw/create-context-hook";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { runMigrations } from "@/lib/migration";
 import { Scan, Frequency } from "@/types";
 import {
   Entitlement,
@@ -36,11 +37,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const [entitlement, setEntitlement] = useState<Entitlement>(INACTIVE_ENT);
 
+  // Run schema migration before any data is read.
   // Hydrate persisted state + entitlement on mount.
   useEffect(() => {
     let active = true;
     (async () => {
       try {
+        // Schema migration — backfills missing fields on existing scans.
+        // Must run BEFORE hydration so the state picks up migrated data.
+        await runMigrations();
+
         const [raw, ent] = await Promise.all([
           AsyncStorage.getItem(STORAGE_KEY),
           getEntitlement(),

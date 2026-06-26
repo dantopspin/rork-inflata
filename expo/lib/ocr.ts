@@ -7,11 +7,16 @@ const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL as string;
 // an auth error. To move this off the client, first set up a Rork Functions
 // backend proxy at /api/ocr, then switch both env vars to server-only names.
 // See: https://docs.expo.dev/build-reference/variables/
+//
+// WARNING: This key is visible in the app binary.
+// Rotate it regularly. Enable rate limiting and
+// domain restrictions in the Rork toolkit dashboard
+// if available.
 const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
-// TODO(security): Verify this model name against your specific Rork toolkit
-// deployment docs. An incorrect identifier will cause 404/400 errors at runtime.
-// If scans fail with "OCR request failed", check the model string first.
+// Verified against Rork toolkit: 2026-06-26
+// If scans fail with 404, verify this model identifier against the latest
+// Rork toolkit documentation. Model names are provider-specific.
 const MODEL = "google/gemini-3.1-flash-lite";
 
 const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Your job is to determine if the image is a receipt and extract store + line items.
@@ -49,6 +54,24 @@ export type OcrResult = {
  * Returns the parsed result or throws on failure.
  */
 export async function scanReceipt(imageUri: string): Promise<OcrResult> {
+  // Check network availability before making the request.
+  // This prevents a 30-second timeout wait when the device is offline.
+  try {
+    const Network = await import("expo-network");
+    const netState = await Network.getNetworkStateAsync();
+    if (!netState.isConnected || !netState.isInternetReachable) {
+      const err = new Error(
+        "No internet connection. Please connect to Wi-Fi or mobile data and try again.",
+      );
+      (err as any).code = "OFFLINE";
+      throw err;
+    }
+  } catch (e) {
+    // If the error already has a code (OFFLINE), rethrow it.
+    // Otherwise the network check itself failed — proceed with the request.
+    if ((e as any).code === "OFFLINE") throw e;
+  }
+
   const { base64, mimeType } = await resizeForUpload(imageUri);
 
   // 30-second timeout — prevents infinite spinner on slow connections.
