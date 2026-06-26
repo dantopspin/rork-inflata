@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { ArrowRight, Bell, Check, ReceiptText, LineChart, ChevronLeft } from "lucide-react-native";
+import { ArrowRight, Bell, Check, ReceiptText, LineChart, ChevronLeft, ScanLine, TrendingUp } from "lucide-react-native";
 import { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -53,8 +53,13 @@ export default function Onboarding() {
     Object.fromEntries(STAPLES.map((s) => [s.id, s.avgPrice.toFixed(2)])),
   );
   const goBack = () => {
-    if (Platform.OS !== "web") Haptics.selectionAsync();
-    setStep((s) => (s > 0 ? ((s - 1) as 0 | 1 | 2 | 3) : s));
+    setStep((s) => {
+      if (s > 0) {
+        if (Platform.OS !== "web") Haptics.selectionAsync();
+        return (s - 1) as 0 | 1 | 2 | 3;
+      }
+      return s;
+    });
   };
 
   const fillAverages = () => {
@@ -92,6 +97,10 @@ export default function Onboarding() {
     router.replace("/scan");
   };
 
+  const skipToDashboard = () => {
+    router.replace("/(tabs)");
+  };
+
   const allowNotifications = async () => {
     const granted = await requestNotificationPermission();
     setNotifications(granted);
@@ -109,8 +118,7 @@ export default function Onboarding() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
@@ -118,20 +126,22 @@ export default function Onboarding() {
           contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 40 }}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.topRow}>
-            {step > 0 && step < 3 ? (
-              <Pressable onPress={goBack} style={styles.backBtn} hitSlop={10}>
-                <ChevronLeft size={20} color={Colors.foreground} strokeWidth={2.5} />
-              </Pressable>
-            ) : (
-              <View style={styles.backBtnSpacer} />
-            )}
-            <View style={styles.progress}>
-              {[1, 2, 3].map((n) => (
-                <View key={n} style={[styles.progressSeg, n <= step && styles.progressSegOn]} />
-              ))}
+          {step > 0 ? (
+            <View style={styles.topRow}>
+              {step < 3 ? (
+                <Pressable onPress={goBack} style={styles.backBtn} hitSlop={10}>
+                  <ChevronLeft size={20} color={Colors.foreground} strokeWidth={2.5} />
+                </Pressable>
+              ) : (
+                <View style={styles.backBtnSpacer} />
+              )}
+              <View style={styles.progress}>
+                {[1, 2, 3].map((n) => (
+                  <View key={n} style={[styles.progressSeg, n <= step && styles.progressSegOn]} />
+                ))}
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {step === 0 ? (
             <Animated.View entering={FadeInDown.duration(350)} style={{ marginTop: 40, alignItems: "center" }}>
@@ -144,9 +154,13 @@ export default function Onboarding() {
                 which items are spiking — and how much more you&apos;re paying.
               </Text>
               <View style={styles.introFeatures}>
-                {["Scan any grocery receipt in seconds.", "Track price changes across every item.", "Get alerts before your wallet takes a hit."].map((text) => (
+                {[
+                  { text: "Scan any grocery receipt in seconds.", Icon: ScanLine },
+                  { text: "Track price changes across every item.", Icon: TrendingUp },
+                  { text: "Get alerts before your wallet takes a hit.", Icon: Bell },
+                ].map(({ text, Icon }) => (
                   <View key={text} style={styles.introFeatureRow}>
-                    <LineChart size={16} color={Colors.accent} strokeWidth={2} />
+                    <Icon size={16} color={Colors.accent} strokeWidth={2} />
                     <Text style={styles.introFeatureText}>{text}</Text>
                   </View>
                 ))}
@@ -280,7 +294,7 @@ export default function Onboarding() {
               >
                 <Text style={styles.darkBtnText}>ALLOW NOTIFICATIONS</Text>
               </Pressable>
-              <Pressable onPress={finishOnboarding} style={styles.notNow}>
+              <Pressable onPress={skipToDashboard} style={styles.notNow}>
                 <Text style={styles.notNowText}>NOT NOW</Text>
               </Pressable>
             </Animated.View>
