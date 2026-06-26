@@ -111,9 +111,14 @@ export default function Settings() {
   const handleRestore = async () => {
     setRestoreMsg(null);
     setRestoreOk(false);
-    const ok = await restorePurchases();
-    setRestoreOk(ok);
-    setRestoreMsg(ok ? "Subscription restored successfully." : "No active subscription found.");
+    try {
+      const ok = await restorePurchases();
+      setRestoreOk(ok);
+      setRestoreMsg(ok ? "Subscription restored successfully." : "No active subscription found.");
+    } catch {
+      setRestoreOk(false);
+      setRestoreMsg("Could not reach the App Store. Check your connection and try again.");
+    }
   };
 
   const selectFrequency = (f: Frequency) => {
@@ -206,8 +211,9 @@ export default function Settings() {
             onPress={() => setFreqOpen(true)}
             chevron
           />
-          {/* Switch row: for unsubscribed users the switch is visually locked — 
-              value is always false, onValueChange shows paywall instead of toggling */}
+          {/* Switch row: for unsubscribed users the switch is visually and functionally
+              disabled — value is forced false, onValueChange shows paywall. Accessibility
+              announces the locked state so screen readers convey the restriction. */}
           <View style={styles.toggleRow}>
             {subscribed
               ? <Bell size={20} color={Colors.accent} />
@@ -224,7 +230,13 @@ export default function Settings() {
               onValueChange={toggleNotifications}
               trackColor={{ true: Colors.accent, false: Colors.muted }}
               thumbColor={Colors.white}
-              disabled={false} // intercept at handler level, not here
+              disabled={!subscribed}
+              accessibilityState={{ disabled: !subscribed }}
+              accessibilityLabel={
+                subscribed
+                  ? `Push notifications ${notifications ? "enabled" : "disabled"}`
+                  : "Push notifications locked — upgrade to enable"
+              }
             />
           </View>
         </Section>

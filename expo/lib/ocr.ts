@@ -2,9 +2,13 @@ import { resizeForUpload } from "./resize-for-upload";
 
 const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL as string;
 
-// SECURITY: This key was migrated from EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY.
-// EXPO_PUBLIC_ prefix is removed to prevent client-bundle exposure.
-// You must now supply this secret via EAS Secrets or a backend proxy.
+// SECURITY: EXPO_PUBLIC_ prefix removed — no longer exposed to the client bundle.
+// For production, route OCR requests through a Rork Functions backend proxy
+// so the secret never touches the client. The proxy receives the image, injects
+// the secret server-side, and returns the parsed result.
+// TODO(backend): Create a Rork Function at /api/ocr that proxies this call.
+// Until then, supply this via EAS Secrets in eas.json:
+//   "build": { "production": { "env": { "RORK_TOOLKIT_SECRET_KEY": "..." } } }
 // See: https://docs.expo.dev/build-reference/variables/
 const SECRET_KEY = process.env.RORK_TOOLKIT_SECRET_KEY as string;
 
@@ -81,6 +85,9 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
       ],
       max_tokens: 4000,
       temperature: 0,
+      // Force the model to emit pure JSON — no markdown wrappers, no conversational
+      // preamble. Supported by OpenAI, Gemini, and most Vercel AI Gateway models.
+      response_format: { type: "json_object" },
     }),
   });
 
@@ -96,32 +103,48 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("OCR returned empty response");
 
-  // Robust JSON extraction — find the largest JSON object in the response.
-  // Handles AI conversational noise like markdown wrappers or trailing text.
+  // Robust JSON extraction with multiple fallback strategies.
+  // Strategy 1: try direct parse first (response_format ensures clean JSON).
+  let json: OcrResult | null = null;
+
+  // Strategy 2: strip markdown code fences (```json ... ``` or ``` ... ```).
+  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  const fenceContent = fenceMatch ? fenceMatch[1].trim() : null;
+
+  // Strategy 3: find the largest JSON object via brace matching.
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
-  if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
-    throw new Error(`No JSON object found in OCR response: ${content.slice(0, 200)}`);
-  }
-  const jsonSubstring = content.slice(firstBrace, lastBrace + 1);
+  const hasBraces = firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace;
 
-  // Balanced-brace check: ensure the extracted substring has matching {"{"} counts.
-  // Mismatched braces are a strong signal of truncated or malformed AI output.
-  let braceDepth = 0;
-  for (const ch of jsonSubstring) {
-    if (ch === "{") braceDepth++;
-    else if (ch === "}") braceDepth--;
-    if (braceDepth < 0) break;
-  }
-  if (braceDepth !== 0) {
-    throw new Error(`Unbalanced braces in OCR response — likely truncated JSON. Depth: ${braceDepth}. Content: ${jsonSubstring.slice(0, 200)}`);
+  // Try each strategy in order: direct → fence → brace extraction
+  for (const candidate of [
+    content,                                  // Strategy 1: raw content
+    fenceContent,                             // Strategy 2: markdown fence
+    hasBraces ? content.slice(firstBrace, lastBrace + 1) : null, // Strategy 3: braces
+  ]) {
+    if (!candidate) continue;
+
+    // For brace-extracted content, verify balanced braces.
+    if (candidate === (hasBraces ? content.slice(firstBrace, lastBrace + 1) : null)) {
+      let braceDepth = 0;
+      for (const ch of candidate) {
+        if (ch === "{") braceDepth++;
+        else if (ch === "}") braceDepth--;
+        if (braceDepth < 0) break;
+      }
+      if (braceDepth !== 0) continue; // unbalanced — skip this candidate
+    }
+
+    try {
+      json = JSON.parse(candidate) as OcrResult;
+      break;
+    } catch {
+      // This strategy failed; try the next one.
+    }
   }
 
-  let json: OcrResult;
-  try {
-    json = JSON.parse(jsonSubstring) as OcrResult;
-  } catch {
-    throw new Error(`Failed to parse OCR response: ${jsonSubstring.slice(0, 200)}`);
+  if (!json) {
+    throw new Error(`Failed to parse OCR response as JSON: ${content.slice(0, 200)}`);
   }
 
   // Strict receipt guard — reject unless the AI explicitly returns is_receipt: true.
