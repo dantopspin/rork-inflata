@@ -1,6 +1,6 @@
 import { BlurView } from "expo-blur";
 import { Lock, AlertTriangle, ArrowRight } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -61,7 +61,7 @@ function pctColor(pct: number): string {
   return Colors.mutedForeground;
 }
 
-/** Compute category breakdown from AI-assigned categories. Falls back to "Pantry" if missing. */
+/** Compute category breakdown from AI-assigned categories. Falls back to "Uncategorized" if missing. */
 function computeCategories(scans: ReturnType<typeof useApp>["scans"]): [string, number][] | null {
   let total = 0;
   const sums: Record<string, number> = {};
@@ -69,7 +69,7 @@ function computeCategories(scans: ReturnType<typeof useApp>["scans"]): [string, 
   for (const s of scans) {
     if (s.source !== "scan") continue;
     for (const it of s.items) {
-      const cat = it.category || "Pantry";
+      const cat = it.category || "Uncategorized";
       sums[cat] = (sums[cat] ?? 0) + it.price;
       total += it.price;
     }
@@ -87,6 +87,12 @@ export default function Insights() {
   const insets = useSafeAreaInsets();
   const { subscribed, scans, frequency } = useApp();
   const [paywall, setPaywall] = useState(false);
+
+  // Auto-close the paywall sheet when the user's subscription becomes active
+  // (e.g. after a successful purchase completes).
+  useEffect(() => {
+    if (subscribed) setPaywall(false);
+  }, [subscribed]);
 
   const monthly = useMemo(() => {
     const m = new Map<string, number>();
@@ -118,16 +124,21 @@ export default function Insights() {
   const stats = useMemo(() => aggregateItems(scans), [scans]);
   const projectedNext = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
 
-  const monthlyData = monthly.length ? monthly : DEMO_MONTHLY;
-  const volatileData = volatile.length
-    ? volatile.map((v) => ({
-        key: v.key,
-        name: v.name,
-        pctChange: v.unitPriceChange ?? v.pctChange,
-        unitPrice: v.canonicalUnitPrice,
-        unitMeasure: v.unitMeasure,
-        isOutlier: v.isOutlier ?? false,
-      }))
+  // Show real data whenever any scans exist — never hide a single real bar behind
+  // demo data. The ghost-bar comparison handles the one-month case.
+  const hasRealScans = scans.some((s) => s.source === "scan");
+  const monthlyData = hasRealScans ? monthly : DEMO_MONTHLY;
+  const volatileData: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] = volatile.length
+    ? volatile
+        .filter((v) => v.unitPriceChange != null)
+        .map((v) => ({
+          key: v.key,
+          name: v.name,
+          pctChange: v.unitPriceChange!,
+          unitPrice: v.canonicalUnitPrice,
+          unitMeasure: v.unitMeasure,
+          isOutlier: v.isOutlier ?? false,
+        }))
     : DEMO_VOLATILE;
   const categoryData = categories ?? (subscribed ? null : DEMO_CATEGORIES);
 
@@ -163,10 +174,21 @@ export default function Insights() {
       }
       return `${month}: $${v.toFixed(0)}`;
     });
-    if (projectedNext > 0) parts.push(`Projected: $${projectedNext.toFixed(0)}`);
-    if (monthlyData.length <= 1) parts.push(`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`);
-    return `Monthly spend chart. ${parts.join(". ")}. Highest month: $${maxSpend.toFixed(0)}`;
-  }, [monthlyData, momPcts, projectedNext, maxSpend]);
+
+    // Identify the highest month from the user's actual data.
+    let highestMonth = "";
+    let highestVal = 0;
+    for (const [k, v] of monthlyData) {
+      if (v > highestVal) { highestVal = v; highestMonth = labelMonth(k); }
+    }
+
+    const extras: string[] = [];
+    if (highestMonth) extras.push(`Highest month: ${highestMonth} at $${highestVal.toFixed(0)}`);
+    if (projectedNext > 0) extras.push(`Projected: $${projectedNext.toFixed(0)}`);
+    if (showNationalAvg) extras.push(`National average: $${NATIONAL_AVG_BASKET.toFixed(0)}`);
+
+    return `Monthly spend chart. ${parts.join(". ")}. ${extras.join(". ")}`;
+  }, [monthlyData, momPcts, projectedNext, showNationalAvg]);
 
   return (
     <View style={styles.screen}>
@@ -362,7 +384,7 @@ export default function Insights() {
       </ScrollView>
 
       <PaywallSheet
-        open={paywall}
+        open={paywall && !subscribed}
         onClose={() => setPaywall(false)}
         reason="Insights are a paid feature"
       />

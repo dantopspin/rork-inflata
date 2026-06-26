@@ -37,7 +37,18 @@ export default function Watchlist() {
     );
   }, [bestPrices, search]);
 
+  const uniqueStoreCount = useMemo(() => {
+    const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
+    return stores.size;
+  }, [scans]);
+
   const hasNoData = bestPrices.length === 0;
+  // Determine the single store name when the user has only shopped at one place.
+  const soleStore = useMemo(() => {
+    if (uniqueStoreCount !== 1) return null;
+    const real = scans.filter((s) => s.source === "scan");
+    return real[real.length - 1]?.store ?? null;
+  }, [uniqueStoreCount, scans]);
 
   return (
     <View style={styles.screen}>
@@ -88,10 +99,16 @@ export default function Watchlist() {
           <View style={styles.emptyCard}>
             <ArrowDownUp size={28} color={Colors.mutedForeground} strokeWidth={1.5} />
             <Text style={styles.emptyTitle}>Not enough data yet</Text>
-            <Text style={styles.emptyBody}>
-              Scan receipts from at least two different stores to start comparing prices
-              and finding the best deals.
-            </Text>
+            {uniqueStoreCount === 1 && soleStore ? (
+              <Text style={styles.emptyBody}>
+                You&apos;ve only scanned {soleStore}. Scan a receipt from a different store to unlock price comparisons.
+              </Text>
+            ) : (
+              <Text style={styles.emptyBody}>
+                Scan receipts from at least two different stores to start comparing prices
+                and finding the best deals.
+              </Text>
+            )}
             <Pressable
               onPress={() => router.push("/scan")}
               style={({ pressed }) => [
@@ -129,7 +146,7 @@ export default function Watchlist() {
                       pressed && { backgroundColor: Colors.muted },
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel={`${item.name}: cheapest at ${item.cheapestStore}, ${fmtUSD(item.cheapestPrice!)}, save ${fmtUSD(savings)}`}
+                    accessibilityLabel={`${item.name}: cheapest at ${item.cheapestStore}, ${fmtUSD(item.cheapestPrice ?? 0)}, save ${fmtUSD(savings)}`}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemName}>{item.name}</Text>
@@ -143,7 +160,7 @@ export default function Watchlist() {
 
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={styles.cheapestPrice}>
-                        {fmtUSD(item.cheapestPrice!)}
+                        {fmtUSD(item.cheapestPrice ?? item.currentPrice)}
                       </Text>
                       {savings > 0 ? (
                         <View style={styles.savingsBadge}>
@@ -152,9 +169,9 @@ export default function Watchlist() {
                           </Text>
                         </View>
                       ) : (
-                        <Text style={styles.currentPrice}>
-                          {fmtUSD(item.currentPrice)} now
-                        </Text>
+                        <View style={styles.bestPriceBadge}>
+                          <Text style={styles.bestPriceText}>BEST PRICE</Text>
+                        </View>
                       )}
                     </View>
                     <View style={{ marginLeft: 6 }}>
@@ -292,11 +309,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     color: "#22a06b",
   },
-  currentPrice: {
-    marginTop: 3,
-    fontFamily: Fonts.mono,
-    fontSize: 10,
-    color: Colors.mutedForeground,
+  bestPriceBadge: {
+    marginTop: 4,
+    backgroundColor: Colors.successSoft,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  bestPriceText: {
+    fontFamily: Fonts.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.4,
+    color: Colors.success,
   },
 
   startScanBtn: {

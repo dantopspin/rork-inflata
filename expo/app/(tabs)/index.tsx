@@ -62,7 +62,7 @@ export default function Dashboard() {
   const recentItems = useMemo(
     () =>
       recentScans.flatMap((s, idx) =>
-        s.items.map((it) => ({ ...it, scanDate: s.date, store: s.store, rowKey: `${s.id}-${idx}` as string })),
+        s.items.map((it) => ({ ...it, itemKey: it.itemKey, scanDate: s.date, store: s.store, rowKey: `${s.id}-${it.itemKey}-${idx}` as string })),
       ),
     [recentScans],
   );
@@ -74,7 +74,14 @@ export default function Dashboard() {
     const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
     return stores.size;
   }, [scans]);
-  const showPriceAlert = worst ? hasRecentSpike(worst) : false;
+  // A price alert should fire when ANY tracked item had a recent spike,
+  // not just the single worst offender — otherwise critical inflation
+  // alerts get buried.
+  const showPriceAlert = topSpikes.some((s) => hasRecentSpike(s));
+  const spikeTarget = useMemo(
+    () => topSpikes.find((s) => hasRecentSpike(s)) ?? worst,
+    [topSpikes, worst],
+  );
 
   const [paywall, setPaywall] = useState<boolean>(false);
   const [evidenceOpen, setEvidenceOpen] = useState<boolean>(false);
@@ -83,7 +90,7 @@ export default function Dashboard() {
     return <View style={styles.screen}><Header /></View>;
   }
 
-  if (scans.length === 0) {
+  if (realCount === 0) {
     return (
       <View style={styles.screen}>
         <Header />
@@ -107,7 +114,7 @@ export default function Dashboard() {
               <TrendingUp size={15} color={Colors.accent} strokeWidth={2.5} />
               <Text style={styles.inflationKicker}>PERSONAL INFLATION RATE</Text>
             </View>
-            <Text style={[styles.inflationValue, { color: inflation < 0 ? "#22a06b" : Colors.accent }]}>{fmtPct(inflation)}</Text>
+            <Text style={[styles.inflationValue, { color: inflation < 0 ? Colors.success : Colors.accent }]}>{fmtPct(inflation)}</Text>
             <Text style={styles.inflationHint}>
               {conf.level === "low"
                 ? "Based on limited data — scan more receipts for an accurate rate."
@@ -222,41 +229,41 @@ export default function Dashboard() {
         </Animated.View>
 
         {/* ===== PRICE ALERT (replaces Worst Offender) ===== */}
-        {worst && showPriceAlert ? (
+        {showPriceAlert && spikeTarget ? (
           <Animated.View entering={FadeInDown.duration(400).delay(80)} style={{ marginTop: 24, paddingHorizontal: 24 }}>
             <Pressable
               onPress={() => {
                 if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push(`/item/${worst.key}`);
+                router.push(`/item/${spikeTarget.key}`);
               }}
               style={({ pressed }) => [styles.priceAlert, pressed && { transform: [{ scale: 0.99 }] }]}
               accessibilityRole="button"
-              accessibilityLabel={`Price spike alert: ${worst.name}, ${fmtPct(effectivePriceChange(worst))} increase in last 14 days`}
+              accessibilityLabel={`Price spike alert: ${spikeTarget.name}, ${fmtPct(effectivePriceChange(spikeTarget))} increase in last 14 days`}
             >
               <View style={styles.priceAlertBanner}>
                 <AlertTriangle size={16} color={Colors.accent} strokeWidth={2} />
                 <Text style={styles.priceAlertBannerText}>PRICE SPIKE ALERT — LAST 14 DAYS</Text>
               </View>
-              {detectShrinkflation(worst) ? (
+              {detectShrinkflation(spikeTarget) ? (
                 <View style={styles.shrinkflationBadge}>
                   <Scale size={12} color={Colors.destructive} strokeWidth={2} />
                   <Text style={styles.shrinkflationBadgeText}>SHRINKFLATION DETECTED</Text>
                 </View>
               ) : null}
-              <Text style={styles.priceAlertName}>{worst.name}</Text>
+              <Text style={styles.priceAlertName}>{spikeTarget.name}</Text>
               <View style={styles.priceAlertGrid}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.priceAlertStatLabel}>SPIKE</Text>
-                  <Text style={styles.priceAlertStat}>{fmtPct(worst.biggestJumpPct ?? effectivePriceChange(worst))}</Text>
+                  <Text style={styles.priceAlertStat}>{fmtPct(spikeTarget.biggestJumpPct ?? effectivePriceChange(spikeTarget))}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.priceAlertStatLabel}>OUT OF POCKET</Text>
-                  <Text style={styles.priceAlertStat}>+{fmtUSD(Math.max(0, worst.dollarChange))}</Text>
+                  <Text style={styles.priceAlertStat}>+{fmtUSD(Math.max(0, spikeTarget.dollarChange))}</Text>
                 </View>
               </View>
               <View style={styles.priceAlertFooter}>
                 <Text style={styles.priceAlertSince}>
-                  Since {fmtDateLong(worst.firstDate)}
+                  Since {fmtDateLong(spikeTarget.firstDate)}
                 </Text>
                 <ArrowRight size={16} color={Colors.accent} />
               </View>
@@ -282,7 +289,7 @@ export default function Dashboard() {
                   </View>
                 </View>
               ) : null}
-              {strategyItems.length > 0 ? strategyItems.map((item) => {
+              {uniqueStores >= 2 && strategyItems.length > 0 ? strategyItems.map((item) => {
                 const isBuyAt = item.action === "buy_at";
                 const isWait = item.action === "wait";
                 const isStockUp = item.action === "stock_up";
@@ -439,7 +446,7 @@ export default function Dashboard() {
       </ScrollView>
 
       <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" totalExtra={totalDelta} />
-      <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? worst : undefined} />
+      <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? spikeTarget : undefined} />
     </View>
   );
 }
@@ -474,9 +481,9 @@ function RecentEvidenceModal({
   }, [spikeItem]);
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Animated.View entering={FadeIn.duration(180)} style={modalStyles.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} accessibilityViewIsModal={true}>
+      <Animated.View entering={FadeIn.duration(180)} style={modalStyles.backdrop} accessibilityViewIsModal={true}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close modal" />
       </Animated.View>
       <View style={modalStyles.anchor} pointerEvents="box-none">
         <Animated.View entering={SlideInUp.springify().dampingRatio(0.7).stiffness(280)} style={[modalStyles.sheet, { paddingBottom: insets.bottom + 20 }]}>
