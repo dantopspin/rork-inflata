@@ -28,28 +28,7 @@ const CAT_COLORS: Record<string, string> = {
   Snacks:  "#C47B2E",
 };
 
-// Realistic demo data — non-linear, looks like real grocery spend
-const DEMO_MONTHLY: [string, number][] = [
-  ["2026-01", 320],
-  ["2026-02", 291],
-  ["2026-03", 358],
-  ["2026-04", 342],
-  ["2026-05", 407],
-  ["2026-06", 389],
-];
-const DEMO_VOLATILE: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] = [
-  { key: "eggs",           name: "Eggs",           pctChange: 41,  unitPrice: 0.35, unitMeasure: "each" },
-  { key: "butter",         name: "Butter",          pctChange: 28,  unitPrice: 0.62, unitMeasure: "oz" },
-  { key: "milk",           name: "Whole Milk",      pctChange: 18,  unitPrice: 0.03, unitMeasure: "fl oz" },
-  { key: "chicken-breast", name: "Chicken Breast",  pctChange: 12,  unitPrice: 0.31, unitMeasure: "oz" },
-  { key: "bananas",        name: "Bananas",         pctChange: -3,  unitPrice: 0.04, unitMeasure: "oz" },
-];
-const DEMO_CATEGORIES: [string, number][] = [
-  ["Dairy",   38],
-  ["Meat",    27],
-  ["Produce", 18],
-  ["Pantry",  17],
-];
+
 
 function labelMonth(yyyyMm: string): string {
   const [, m] = yyyyMm.split("-");
@@ -125,23 +104,24 @@ export default function Insights() {
   const stats = useMemo(() => aggregateItems(scans), [scans]);
   const projectedNext = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
 
-  // Show real data whenever any scans exist — never hide a single real bar behind
-  // demo data. The ghost-bar comparison handles the one-month case.
+  // Only show real data — never fabricate demo data. Users who haven't scanned
+  // yet see empty states that guide them to start scanning.
   const hasRealScans = scans.some((s) => s.source === "scan");
-  const monthlyData = hasRealScans ? monthly : DEMO_MONTHLY;
-  const volatileData: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] = volatile.length
-    ? volatile
-        .filter((v) => v.unitPriceChange != null)
-        .map((v) => ({
-          key: v.key,
-          name: v.name,
-          pctChange: v.unitPriceChange!,
-          unitPrice: v.canonicalUnitPrice,
-          unitMeasure: v.unitMeasure,
-          isOutlier: v.isOutlier ?? false,
-        }))
-    : DEMO_VOLATILE;
-  const categoryData = categories ?? (subscribed ? null : DEMO_CATEGORIES);
+  const monthlyData = hasRealScans ? monthly : [];
+  const volatileData: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] =
+    volatile.length
+      ? volatile
+          .filter((v) => v.unitPriceChange != null)
+          .map((v) => ({
+            key: v.key,
+            name: v.name,
+            pctChange: v.unitPriceChange!,
+            unitPrice: v.canonicalUnitPrice,
+            unitMeasure: v.unitMeasure,
+            isOutlier: v.isOutlier ?? false,
+          }))
+      : [];
+  const categoryData = categories ?? null;
 
   // Month-over-month % changes for accessibility
   const momPcts = useMemo(() => {
@@ -212,6 +192,26 @@ export default function Insights() {
             {/* ── Monthly spend bar chart ── */}
             <View style={styles.card} accessibilityLabel={chartAccessibilityLabel}>
               <Text style={styles.cardKicker}>MONTHLY SPEND</Text>
+              {monthlyData.length === 0 ? (
+                <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                  <Text style={styles.emptyHint}>
+                    Scan your first receipt to start tracking your monthly grocery spend.
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push("/scan")}
+                    style={({ pressed }) => [
+                      styles.startScanBtn,
+                      pressed && { transform: [{ scale: 0.97 }] },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Start scanning receipts"
+                  >
+                    <Text style={styles.startScanBtnText}>START SCANNING</Text>
+                    <ArrowRight size={16} color={Colors.accentForeground} />
+                  </Pressable>
+                </View>
+              ) : (
+                <>
               <View style={styles.legend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: Colors.accent }]} />
@@ -282,13 +282,21 @@ export default function Insights() {
                   </View>
                 )}
               </View>
+                </>
+              )}
             </View>
 
             {/* ── Most volatile ── */}
             <Text style={[styles.cardKicker, { marginTop: 28 }]}>MOST VOLATILE</Text>
-            <Text style={styles.volatileSubtitle}>Ranked by biggest price change per unit.</Text>
-            <View style={{ gap: 8, marginTop: 12 }}>
-              {volatileData.map((v) => (
+            {volatileData.length === 0 ? (
+              <Text style={[styles.volatileSubtitle, { marginTop: 8 }]}>
+                Scan more receipts to see which items are changing the most.
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.volatileSubtitle}>Ranked by biggest price change per unit.</Text>
+                <View style={{ gap: 8, marginTop: 12 }}>
+                  {volatileData.map((v) => (
                 <View key={v.key} style={[styles.volatileRow, v.isOutlier && styles.volatileRowOutlier]}>
                   <View style={styles.volatileLeft}>
                     <Text style={[styles.volatileName, v.isOutlier && { color: Colors.destructive }]}>
@@ -312,7 +320,9 @@ export default function Insights() {
                   </Text>
                 </View>
               ))}
-            </View>
+                </View>
+              </>
+            )}
 
             {/* ── Category breakdown ── */}
             {categoryData && categoryData.length > 0 ? (
@@ -453,7 +463,6 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 1.5,
     borderColor: Colors.mutedForeground,
-    borderStyle: "dashed",
   },
   projectedBar: {
     backgroundColor: Colors.mutedForeground,

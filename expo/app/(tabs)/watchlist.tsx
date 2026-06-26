@@ -19,7 +19,7 @@ export default function Watchlist() {
   const bestPrices = useMemo(() => {
     const stats = aggregateItems(scans);
     return stats
-      .filter((s) => s.cheapestPrice != null && s.cheapestStore)
+      .filter((s) => s.cheapestPrice != null && s.cheapestStore && s.realAppearances > 0)
       .sort((a, b) => {
         const aSavings = a.currentPrice - (a.cheapestPrice ?? a.currentPrice);
         const bSavings = b.currentPrice - (b.cheapestPrice ?? b.currentPrice);
