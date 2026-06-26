@@ -688,13 +688,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(250,249,245,0.55)",
   },
-  lockInner: {
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    backgroundColor: Colors.surface2,
-    borderRadius: Radius.xxl,
-  },
+  lockInner: { alignItems: "center", paddingHorizontal: 24 },
   lockTitle: {
     marginTop: 12,
     fontFamily: Fonts.extrabold,
