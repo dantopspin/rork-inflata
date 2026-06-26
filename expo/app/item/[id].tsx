@@ -99,10 +99,14 @@ export default function ItemDetail() {
     [stat],
   );
 
-  // Unit price change percentage (first → last)
+  // Unit price change percentage (first real → last)
   const unitPriceChange = useMemo(() => {
     if (unitPriceEntries.length < 2) return null;
-    const first = unitPriceEntries[0].canonicalUnitPrice!;
+    // Anchor to the first REAL unit entry so a synthetic baseline estimate
+    // doesn't skew the percentage.
+    const firstReal = unitPriceEntries.find((h) => !h.fromBaseline);
+    const anchor = firstReal ?? unitPriceEntries[0];
+    const first = anchor.canonicalUnitPrice!;
     const last = unitPriceEntries[unitPriceEntries.length - 1].canonicalUnitPrice!;
     if (first <= 0) return null;
     return ((last - first) / first) * 100;

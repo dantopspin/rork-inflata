@@ -150,7 +150,13 @@ export function aggregateItems(scans: Scan[]): ItemStat[] {
     let unitPriceConfidence: "low" | "medium" | "high" = "low";
     let unitPriceChange: number | undefined;
     if (unitEntries.length >= 2) {
-      const firstUP = unitEntries[0].canonicalUnitPrice!;
+      // Anchor to the first REAL unit entry — same pattern as pctChange.
+      // Baseline estimates never carry quantity data, so they're absent from
+      // unitEntries in practice, but we filter defensively in case the data
+      // model evolves.
+      const firstRealUnit = unitEntries.find((e) => !e.fromBaseline);
+      const anchorUnit = firstRealUnit ?? unitEntries[0];
+      const firstUP = anchorUnit.canonicalUnitPrice!;
       const lastUP = unitEntries[unitEntries.length - 1].canonicalUnitPrice!;
       if (firstUP > 0) unitPriceChange = ((lastUP - firstUP) / firstUP) * 100;
       const totalEntries = entries.length;
@@ -390,11 +396,16 @@ export function nextTripStrategyItems(stats: ItemStat[]): TripStrategyItem[] {
 export function detectShrinkflation(stat: ItemStat): boolean {
   const unitEntries = stat.history.filter((h) => h.canonicalUnitPrice != null);
   if (unitEntries.length < 2) return false;
-  const first = unitEntries[0];
+  // Anchor to the first REAL unit entry so a synthetic baseline estimate
+  // (with its 90-day-old user-entered price) doesn't produce a false
+  // positive when compared against a real scan.
+  const firstRealUnit = unitEntries.find((e) => !e.fromBaseline);
+  if (!firstRealUnit) return false;
+  const firstUnit = firstRealUnit;
   const last = unitEntries[unitEntries.length - 1];
-  if (first.price <= 0 || first.canonicalUnitPrice! <= 0) return false;
-  const rawChange = (last.price - first.price) / first.price;
-  const unitChange = (last.canonicalUnitPrice! - first.canonicalUnitPrice!) / first.canonicalUnitPrice!;
+  if (firstUnit.price <= 0 || firstUnit.canonicalUnitPrice! <= 0) return false;
+  const rawChange = (last.price - firstUnit.price) / firstUnit.price;
+  const unitChange = (last.canonicalUnitPrice! - firstUnit.canonicalUnitPrice!) / firstUnit.canonicalUnitPrice!;
   return Math.abs(rawChange) < 0.02 && unitChange > 0.05;
 }
 
