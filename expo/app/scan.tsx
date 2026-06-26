@@ -51,6 +51,7 @@ export default function ScanScreen() {
 
   const realCount = realScanCount(scans);
   const [stage, setStage] = useState<Stage>("camera");
+  const [errorMessage, setErrorMessage] = useState<string>("");
   const [store, setStore] = useState<string>("");
   const [items, setItems] = useState<Editable[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -113,8 +114,8 @@ export default function ScanScreen() {
             name: n.canonical,
             priceStr: item.price.toFixed(2),
             itemKey: n.key,
-            unitQuantity: item.unit_quantity,
-            unitMeasure: item.unit_measure,
+            unitQuantity: item.quantity,
+            unitMeasure: item.unit,
             category: item.category,
           };
         }),
@@ -123,6 +124,7 @@ export default function ScanScreen() {
       setStage("review");
     } catch (err) {
       console.log("[scan] gallery OCR failed", err);
+      setErrorMessage(err instanceof Error ? err.message : String(err ?? ""));
       setStage("error");
     }
   };
@@ -161,8 +163,8 @@ export default function ScanScreen() {
             name: n.canonical,
             priceStr: item.price.toFixed(2),
             itemKey: n.key,
-            unitQuantity: item.unit_quantity,
-            unitMeasure: item.unit_measure,
+            unitQuantity: item.quantity,
+            unitMeasure: item.unit,
             category: item.category,
           };
         }),
@@ -172,6 +174,7 @@ export default function ScanScreen() {
     } catch (err) {
       console.log("[scan] AI OCR failed, using fallback", err);
       // Fallback: show error and allow retry
+      setErrorMessage(err instanceof Error ? err.message : String(err ?? ""));
       setStage("error");
     }
   };
@@ -341,8 +344,16 @@ export default function ScanScreen() {
             <X size={40} color={Colors.accentForeground} strokeWidth={3} />
           </View>
           <Text style={styles.scanningKicker}>SCAN FAILED</Text>
-          <Text style={styles.scanningTitle}>Couldn't read this receipt.</Text>
-          <Text style={styles.scanningHint}>Try again with better lighting</Text>
+          <Text style={styles.scanningTitle}>
+            {errorMessage.includes("INVALID_IMAGE")
+              ? "Please scan a clear receipt."
+              : "Couldn't read this receipt."}
+          </Text>
+          <Text style={styles.scanningHint}>
+            {errorMessage.includes("INVALID_IMAGE")
+              ? "This doesn't look like a grocery receipt. Try a different image."
+              : "Try again with better lighting"}
+          </Text>
           <Pressable
             onPress={retryCapture}
             style={({ pressed }) => [styles.retryBtn, pressed && { transform: [{ scale: 0.97 }] }]}
