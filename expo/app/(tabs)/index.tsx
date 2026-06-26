@@ -119,18 +119,18 @@ export default function Dashboard() {
             </View>
           ) : (
             /* Hero Metric — Inflation Cost This Month */
-            <View style={[styles.heroCard, { borderColor: totalDelta > 0 ? Colors.accent : "#22a06b", shadowColor: totalDelta > 0 ? Colors.accent : "#22a06b" }]} accessibilityLabel={heroAccessibilityLabel}>
+            <View style={[styles.heroCard, { borderColor: totalDelta > 0 ? Colors.accent : Colors.success, shadowColor: totalDelta > 0 ? Colors.accent : Colors.success }]} accessibilityLabel={heroAccessibilityLabel}>
               <View style={styles.heroTopRow}>
-                <TrendingUp size={16} color={totalDelta > 0 ? Colors.accent : "#22a06b"} strokeWidth={2} />
-                <Text style={[styles.heroKicker, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]}>
+                <TrendingUp size={16} color={totalDelta > 0 ? Colors.accent : Colors.success} strokeWidth={2} />
+                <Text style={[styles.heroKicker, { color: totalDelta > 0 ? Colors.accent : Colors.success }]}>
                   INFLATION COST THIS MONTH
                 </Text>
               </View>
-              <Text style={[styles.heroDollar, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              <Text style={[styles.heroDollar, { color: totalDelta > 0 ? Colors.accent : Colors.success }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {fmtUSD(totalDelta)}
               </Text>
               <View style={styles.heroMetaRow}>
-                <Text style={[styles.heroSubPct, { color: totalDelta > 0 ? Colors.accent : "#22a06b" }]}>
+                <Text style={[styles.heroSubPct, { color: totalDelta > 0 ? Colors.accent : Colors.success }]}>
                   {fmtPct(inflation)} personal inflation rate
                 </Text>
                 <View style={styles.heroDot} />

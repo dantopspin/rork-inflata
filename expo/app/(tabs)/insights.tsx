@@ -1,5 +1,5 @@
 import { BlurView } from "expo-blur";
-import { Lock, AlertTriangle, ArrowRight } from "lucide-react-native";
+import { Lock, AlertTriangle, ArrowRight, TrendingDown, TrendingUp } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -37,7 +37,7 @@ function labelMonth(yyyyMm: string): string {
 
 function pctColor(pct: number): string {
   if (pct > 0) return Colors.accent;
-  if (pct < 0) return "#22a06b";
+  if (pct < 0) return Colors.success;
   return Colors.mutedForeground;
 }
 
@@ -185,6 +185,45 @@ export default function Insights() {
         <Text style={styles.kicker}>INSIGHTS</Text>
         <Text style={styles.title}>Month over month</Text>
 
+        {/* ── Monthly Impact Card ── */}
+        {monthlyData.length >= 2 ? (
+          (() => {
+            const cur = monthlyData[monthlyData.length - 1];
+            const prev = monthlyData[monthlyData.length - 2];
+            const diff = cur[1] - prev[1];
+            const diffPct = prev[1] > 0 ? ((diff / prev[1]) * 100) : 0;
+            const isUp = diff > 0;
+            return (
+              <View style={styles.impactCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {isUp ? (
+                    <TrendingUp size={18} color={Colors.accent} strokeWidth={2} />
+                  ) : (
+                    <TrendingDown size={18} color={Colors.success} strokeWidth={2} />
+                  )}
+                  <Text style={styles.impactKicker}>MONTHLY IMPACT</Text>
+                </View>
+                <Text style={[styles.impactValue, { color: isUp ? Colors.accent : Colors.success }]}>
+                  {isUp ? "+" : ""}{fmtUSD(Math.abs(diff))}
+                </Text>
+                <Text style={styles.impactSub}>
+                  {isUp ? "Up" : "Down"} {Math.abs(diffPct).toFixed(1)}% from {labelMonth(prev[0])} to {labelMonth(cur[0])}
+                </Text>
+              </View>
+            );
+          })()
+        ) : monthlyData.length === 1 ? (
+          <View style={styles.impactCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TrendingUp size={18} color={Colors.mutedForeground} strokeWidth={2} />
+              <Text style={styles.impactKicker}>MONTHLY IMPACT</Text>
+            </View>
+            <Text style={styles.impactHint}>
+              Scan one more month to compare your spend trend.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={{ position: "relative", marginTop: 32 }}>
           {/* Content — pointer-events disabled for non-subscribers */}
           <View style={{ pointerEvents: subscribed ? "auto" : "none" }}>
@@ -254,6 +293,20 @@ export default function Insights() {
                   const pctLabel = mom !== null ? ` (${mom > 0 ? "+" : ""}${mom.toFixed(0)}%)` : "";
                   return (
                     <View key={k} style={styles.barCol} accessibilityLabel={`${labelMonth(k)}: $${v.toFixed(0)}${pctLabel}`}>
+                      {/* Trend Badge above bar */}
+                      {mom !== null ? (
+                        <Text
+                          style={[
+                            styles.trendBadge,
+                            { color: mom > 0 ? Colors.accent : mom < 0 ? Colors.success : Colors.mutedForeground },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {mom > 0 ? "+" : ""}{mom.toFixed(0)}%
+                        </Text>
+                      ) : (
+                        <View style={styles.trendBadgeSpacer} />
+                      )}
                       <View style={styles.barTrack}>
                         <Animated.View
                           entering={FadeInDown.duration(500).delay(i * 60)}
@@ -579,6 +632,52 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: Colors.accentForeground,
   },
+
+  // ── Monthly Impact Card ──
+  impactCard: {
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: 20,
+  },
+  impactKicker: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: Colors.mutedForeground,
+  },
+  impactValue: {
+    marginTop: 10,
+    fontFamily: Fonts.extrabold,
+    fontSize: 36,
+    letterSpacing: -1.2,
+    fontVariant: ["tabular-nums"],
+  },
+  impactSub: {
+    marginTop: 4,
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+  },
+  impactHint: {
+    marginTop: 10,
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+    lineHeight: 18,
+  },
+
+  // ── Trend Badge ──
+  trendBadge: {
+    fontFamily: Fonts.monoMedium,
+    fontSize: 9,
+    letterSpacing: 0.3,
+    marginBottom: 4,
+    textAlign: "center" as const,
+  },
+  trendBadgeSpacer: { height: 16 },
 
   // Paywall overlay
   lockOverlay: {

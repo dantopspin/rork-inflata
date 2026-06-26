@@ -4,7 +4,7 @@
  * Ported faithfully from the source web app's CSS custom properties.
  */
 export const Colors = {
-  background: "#F9FAFB", // cold off-white — clinical & professional
+  background: "#F3F1EE", // warm cream — subtle & premium
   foreground: "#121212", // hsl(0 0% 7%) near-black
   surface: "#FFFFFF",
   surface2: "#F3F1EE",

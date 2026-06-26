@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { runMigrations } from "@/lib/migration";
+import { sendSpikeAlert } from "@/lib/notifications";
 import { Scan, Frequency } from "@/types";
 import {
   Entitlement,
@@ -20,6 +21,7 @@ type PersistShape = {
   notificationsEnabled: boolean;
   firstLaunchAt: string;
   postOnboardingPaywallShown: boolean;
+  watchlist: string[];
 };
 
 const STORAGE_KEY = "inflata:state:v1";
@@ -34,6 +36,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
   const [firstLaunchAt, setFirstLaunchAt] = useState<string>(() => new Date().toISOString());
   const [postOnboardingPaywallShown, setPostOnboardingPaywallShown] = useState<boolean>(false);
+
+  const [watchlist, setWatchlist] = useState<string[]>([]);
 
   const [entitlement, setEntitlement] = useState<Entitlement>(INACTIVE_ENT);
 
@@ -60,6 +64,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           setNotificationsEnabled(parsed.notificationsEnabled ?? false);
           setFirstLaunchAt(parsed.firstLaunchAt ?? new Date().toISOString());
           setPostOnboardingPaywallShown(parsed.postOnboardingPaywallShown ?? false);
+          setWatchlist(Array.isArray(parsed.watchlist) ? parsed.watchlist : []);
         }
         setEntitlement(ent);
       } catch (e) {
@@ -83,11 +88,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       notificationsEnabled,
       firstLaunchAt,
       postOnboardingPaywallShown,
+      watchlist,
     };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload)).catch((e) =>
       console.log("[AppProvider] persist failed", e),
     );
-  }, [hydrated, hasOnboarded, frequency, scans, notificationsEnabled, firstLaunchAt, postOnboardingPaywallShown]);
+  }, [hydrated, hasOnboarded, frequency, scans, notificationsEnabled, firstLaunchAt, postOnboardingPaywallShown, watchlist]);
 
   const completeOnboarding = useCallback((freq: Frequency, baseline: Scan) => {
     setFrequencyState(freq);
@@ -96,7 +102,36 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   const addScan = useCallback((scan: Scan) => {
+    // Detect >10% price spikes vs prior history for push notification.
+    const priorPrice = new Map<string, number>();
+    for (const s of scans) {
+      for (const it of s.items) {
+        priorPrice.set(it.itemKey, it.price);
+      }
+    }
+
+    const spikeItems = scan.items.filter((it) => {
+      const prev = priorPrice.get(it.itemKey);
+      return (
+        prev !== undefined &&
+        prev > 0 &&
+        Number.isFinite(it.price) &&
+        it.price > prev * 1.1
+      );
+    });
+
+    if (spikeItems.length > 0) {
+      sendSpikeAlert(spikeItems);
+    }
+
     setScans((prev) => [...prev, scan]);
+  }, [scans]);
+
+  const toggleWatchlist = useCallback((key: string) => {
+    setWatchlist((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key);
+      return [...prev, key];
+    });
   }, []);
 
   const deleteScan = useCallback((id: string) => {
@@ -116,6 +151,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setNotificationsEnabled(false);
     setFirstLaunchAt(new Date().toISOString());
     setPostOnboardingPaywallShown(false);
+    setWatchlist([]);
     try {
       await AsyncStorage.removeItem(STORAGE_KEY);
     } catch (e) {
@@ -176,9 +212,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
       postOnboardingPaywallShown,
       entitlement,
       subscribed,
+      watchlist,
       completeOnboarding,
       addScan,
       deleteScan,
+      toggleWatchlist,
       setFrequency,
       setNotifications,
       clearAll,
@@ -197,9 +235,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
       postOnboardingPaywallShown,
       entitlement,
       subscribed,
+      watchlist,
       completeOnboarding,
       addScan,
       deleteScan,
+      toggleWatchlist,
       setFrequency,
       setNotifications,
       clearAll,

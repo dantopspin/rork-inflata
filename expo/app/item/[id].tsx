@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Platform } from "react-native";
-import { AlertTriangle, ArrowLeft, ArrowRight, Lock, MapPin, Ruler, Share2, Shuffle, TrendingUp } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, Lock, MapPin, Ruler, Share2, Shuffle, Star, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,7 +58,7 @@ function findAlternatives(current: ItemStat, allStats: ItemStat[]): ItemStat[] {
 export default function ItemDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { hydrated, scans, frequency, subscribed } = useApp();
+  const { hydrated, scans, frequency, subscribed, watchlist, toggleWatchlist } = useApp();
 
   const stat = useMemo(() => {
     const stats = withOverspend(aggregateItems(scans), frequency);
@@ -133,6 +133,25 @@ export default function ItemDetail() {
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
           <ArrowLeft size={14} color={Colors.mutedForeground} />
           <Text style={styles.backBtnText}>DASHBOARD</Text>
+        </Pressable>
+
+        {/* Star toggle — pin to top of watchlist */}
+        <Pressable
+          onPress={() => {
+            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            toggleWatchlist(id);
+          }}
+          hitSlop={8}
+          accessibilityLabel={watchlist.includes(id) ? "Unpin from top" : "Pin to top"}
+          accessibilityRole="button"
+          style={styles.starBtn}
+        >
+          <Star
+            size={20}
+            color={watchlist.includes(id) ? Colors.amber : Colors.mutedForeground}
+            fill={watchlist.includes(id) ? Colors.amber : "none"}
+            strokeWidth={2}
+          />
         </Pressable>
 
         {/* Savings Mission Badge */}
@@ -428,6 +447,9 @@ const styles = StyleSheet.create({
   backLink: { marginTop: 16, fontFamily: Fonts.bold, fontSize: 14, color: Colors.accent },
   backBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
   backBtnText: { fontFamily: Fonts.bold, fontSize: 10, letterSpacing: 1, color: Colors.mutedForeground },
+
+  /* Star toggle */
+  starBtn: { alignSelf: "flex-start", marginBottom: 6, padding: 4 },
 
   /* Savings Mission Badge */
   missionBadge: {

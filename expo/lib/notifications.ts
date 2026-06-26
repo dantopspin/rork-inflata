@@ -1,5 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { fmtPct, fmtUSD } from "@/lib/format";
+import { ScanItem } from "@/types";
 
 /**
  * Push / local notification helpers. Premium-only at the call site — every
@@ -17,6 +19,37 @@ import { Platform } from "react-native";
  *   4. Gate behind a RevenueCat entitlement check (premium only).
  *   5. Only trigger if notifications permission is granted.
  */
+
+/**
+ * Fire a local push notification for items that spiked >10% compared to prior purchases.
+ * Called from AppProvider.addScan when a scan reveals price spikes against historical data.
+ */
+export async function sendSpikeAlert(spikeItems: ScanItem[]): Promise<void> {
+  try {
+    if (Platform.OS === "web") return;
+    if (spikeItems.length === 0) return;
+
+    if (spikeItems.length === 1) {
+      const it = spikeItems[0];
+      const title = `Price Spike: ${it.name}`;
+      const body = `${it.name} is now ${fmtUSD(it.price)} — check your watchlist for the best store.`;
+      await Notifications.scheduleNotificationAsync({
+        content: { title, body, sound: "default" },
+        trigger: { seconds: 1, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
+      });
+    } else {
+      const title = `${spikeItems.length} Items Spiked`;
+      const names = spikeItems.map((i) => i.name).join(", ");
+      const body = `${names} jumped in price this trip. Check your watchlist to shop at the cheapest store.`;
+      await Notifications.scheduleNotificationAsync({
+        content: { title, body, sound: "default" },
+        trigger: { seconds: 1, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
+      });
+    }
+  } catch {
+    // Notifications unavailable in this environment — non-fatal.
+  }
+}
 
 export async function requestNotificationPermission(): Promise<boolean> {
   try {

@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { ArrowDownUp, ArrowRight, ChevronRight, Search, Store, X } from "lucide-react-native";
+import { ArrowDownUp, ArrowRight, ChevronRight, Search, Star, Store, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -13,7 +13,7 @@ import { useApp } from "@/providers/AppProvider";
 
 export default function Watchlist() {
   const insets = useSafeAreaInsets();
-  const { scans } = useApp();
+  const { scans, watchlist, toggleWatchlist } = useApp();
   const [search, setSearch] = useState<string>("");
 
   const bestPrices = useMemo(() => {
@@ -29,13 +29,20 @@ export default function Watchlist() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return bestPrices;
-    return bestPrices.filter(
+    let list = bestPrices;
+    // Pin watchlist items to the top when not searching
+    if (!q && watchlist.length > 0) {
+      const pinned = list.filter((s) => watchlist.includes(s.key));
+      const rest = list.filter((s) => !watchlist.includes(s.key));
+      list = [...pinned, ...rest];
+    }
+    if (!q) return list;
+    return list.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
         (s.cheapestStore ?? "").toLowerCase().includes(q),
     );
-  }, [bestPrices, search]);
+  }, [bestPrices, search, watchlist]);
 
   const uniqueStoreCount = useMemo(() => {
     const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
@@ -144,10 +151,30 @@ export default function Watchlist() {
                     style={({ pressed }) => [
                       styles.row,
                       pressed && { backgroundColor: Colors.muted },
+                      watchlist.includes(item.key) && styles.rowPinned,
                     ]}
                     accessibilityRole="button"
                     accessibilityLabel={`${item.name}: cheapest at ${item.cheapestStore}, ${fmtUSD(item.cheapestPrice ?? 0)}, save ${fmtUSD(savings)}`}
                   >
+                    {/* Star toggle — pin to top of watchlist */}
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        toggleWatchlist(item.key);
+                      }}
+                      hitSlop={8}
+                      accessibilityLabel={watchlist.includes(item.key) ? "Unpin from top" : "Pin to top"}
+                      accessibilityRole="button"
+                      style={styles.starBtn}
+                    >
+                      <Star
+                        size={16}
+                        color={watchlist.includes(item.key) ? Colors.amber : Colors.mutedForeground}
+                        fill={watchlist.includes(item.key) ? Colors.amber : "none"}
+                        strokeWidth={2}
+                      />
+                    </Pressable>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemName}>{item.name}</Text>
                       <View style={styles.storeRow}>
@@ -271,6 +298,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: 16,
   },
+  rowPinned: { borderColor: Colors.amber, borderWidth: 1.5 },
+  starBtn: { marginRight: 10, padding: 4 },
   itemName: {
     fontFamily: Fonts.bold,
     fontSize: 14,
@@ -307,7 +336,7 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: 9.5,
     letterSpacing: 0.4,
-    color: "#22a06b",
+    color: Colors.success,
   },
   bestPriceBadge: {
     marginTop: 4,

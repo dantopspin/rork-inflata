@@ -666,6 +666,31 @@ function ReviewView({
                         ) : null}
                       </View>
                     </View>
+                    {/* Inline quantity & unit editors */}
+                    <View style={styles.unitInputsRow}>
+                      <TextInput
+                        value={it.unitQuantity != null ? String(it.unitQuantity) : ""}
+                        onChangeText={(t) => {
+                          const n = Number.parseFloat(t);
+                          setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, unitQuantity: Number.isFinite(n) ? n : undefined } : p)));
+                        }}
+                        placeholder="Qty"
+                        placeholderTextColor={Colors.mutedForeground}
+                        keyboardType="decimal-pad"
+                        returnKeyType="done"
+                        style={styles.unitInput}
+                      />
+                      <TextInput
+                        value={it.unitMeasure ?? ""}
+                        onChangeText={(t) =>
+                          setItems((prev) => prev.map((p) => (p.id === it.id ? { ...p, unitMeasure: t || undefined } : p)))
+                        }
+                        placeholder="oz / ct / lb"
+                        placeholderTextColor={Colors.mutedForeground}
+                        returnKeyType="done"
+                        style={styles.unitMeasureInput}
+                      />
+                    </View>
                     {isSpike ? (
                       <Text style={styles.spikeWarn}>
                         {((price - avg!) / avg! * 100).toFixed(0)}% above your avg of ${avg!.toFixed(2)}
@@ -1135,6 +1160,29 @@ const styles = StyleSheet.create({
     color: Colors.accent,
   },
   priceWrap: { flexDirection: "row", alignItems: "center", gap: 4 },
+  unitInputsRow: { flexDirection: "row", gap: 8, marginTop: 2 },
+  unitInput: {
+    width: 60,
+    backgroundColor: Colors.muted,
+    borderRadius: Radius.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    textAlign: "center",
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    color: Colors.foreground,
+  },
+  unitMeasureInput: {
+    width: 80,
+    backgroundColor: Colors.muted,
+    borderRadius: Radius.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    textAlign: "center",
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    color: Colors.foreground,
+  },
   spikeBadge: {
     fontFamily: Fonts.mono,
     fontSize: 8,
@@ -1268,7 +1316,7 @@ const styles = StyleSheet.create({
   },
   discoveryItemName: { fontFamily: Fonts.bold, fontSize: 14, letterSpacing: -0.3, color: Colors.foreground },
   discoveryItemUnit: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
-  discoveryPrice: { fontFamily: Fonts.bold, fontSize: 16, color: "#22a06b", fontVariant: ["tabular-nums"] },
+  discoveryPrice: { fontFamily: Fonts.bold, fontSize: 16, color: Colors.success, fontVariant: ["tabular-nums"] },
   discoveryPriceHigh: { color: Colors.accent },
   discoveryAvg: { marginTop: 2, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
   discoveryDelta: { fontFamily: Fonts.mono, fontSize: 9, letterSpacing: 0.3, color: Colors.destructive },
