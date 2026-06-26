@@ -358,12 +358,24 @@ export default function ScanScreen() {
           <Text style={styles.scanningTitle}>
             {errorMessage.includes("INVALID_IMAGE")
               ? "Please scan a clear receipt."
-              : "Couldn't read this receipt."}
+              : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                ? "Authentication error. Check app configuration."
+                : errorMessage.includes("HTTP_404")
+                  ? "OCR model not found. Check model configuration."
+                  : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                    ? "Image too large. Try a smaller receipt."
+                    : "Couldn't read this receipt."}
           </Text>
           <Text style={styles.scanningHint}>
             {errorMessage.includes("INVALID_IMAGE")
               ? "This doesn't look like a grocery receipt. Try a different image."
-              : "Try again with better lighting"}
+              : errorMessage.includes("HTTP_401") || errorMessage.includes("HTTP_403")
+                ? "The app is missing a valid API key. Please contact support."
+                : errorMessage.includes("HTTP_404")
+                  ? "The AI model is misconfigured. Please contact support."
+                  : errorMessage.includes("HTTP_413") || errorMessage.includes("IMAGE_TOO_LARGE")
+                    ? "Try cropping to just the receipt area."
+                    : "Try again with better lighting and a flat surface."}
           </Text>
           <Pressable
             onPress={retryCapture}

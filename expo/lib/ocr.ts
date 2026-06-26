@@ -2,15 +2,12 @@ import { resizeForUpload } from "./resize-for-upload";
 
 const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL as string;
 
-// SECURITY: EXPO_PUBLIC_ prefix removed — no longer exposed to the client bundle.
-// For production, route OCR requests through a Rork Functions backend proxy
-// so the secret never touches the client. The proxy receives the image, injects
-// the secret server-side, and returns the parsed result.
-// TODO(backend): Create a Rork Function at /api/ocr that proxies this call.
-// Until then, supply this via EAS Secrets in eas.json:
-//   "build": { "production": { "env": { "RORK_TOOLKIT_SECRET_KEY": "..." } } }
+// IMPORTANT: EXPO_PUBLIC_ prefix is REQUIRED for client-bundle access in Expo.
+// Without it, the variable is undefined at runtime and every scan fails with
+// an auth error. To move this off the client, first set up a Rork Functions
+// backend proxy at /api/ocr, then switch both env vars to server-only names.
 // See: https://docs.expo.dev/build-reference/variables/
-const SECRET_KEY = process.env.RORK_TOOLKIT_SECRET_KEY as string;
+const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
 // TODO(security): Verify this model name against your specific Rork toolkit
 // deployment docs. An incorrect identifier will cause 404/400 errors at runtime.
@@ -85,15 +82,23 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
       ],
       max_tokens: 4000,
       temperature: 0,
-      // Force the model to emit pure JSON — no markdown wrappers, no conversational
-      // preamble. Supported by OpenAI, Gemini, and most Vercel AI Gateway models.
-      response_format: { type: "json_object" },
+      // NOTE: response_format { type: "json_object" } is NOT sent here because
+      // several model/gateway combinations (including google/gemini-* through
+      // certain proxies) reject it or silently ignore it, causing empty/invalid
+      // JSON. The system prompt already commands pure-JSON output, and the
+      // multi-strategy extraction below handles any leftover prose.
     }),
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(`OCR request failed (${response.status}): ${text.slice(0, 200)}`);
+    const detail = text.slice(0, 300);
+    // Surface the HTTP status and detail so the scan screen can show a specific
+    // recovery hint (e.g. 401 → check key, 404 → wrong model name, 413 → image
+    // too large).
+    const err = new Error(`OCR request failed (${response.status}): ${detail}`);
+    (err as any).code = `HTTP_${response.status}`;
+    throw err;
   }
 
   const data = (await response.json()) as {
