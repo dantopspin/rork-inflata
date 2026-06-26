@@ -3,6 +3,7 @@ import { resizeForUpload } from "./resize-for-upload";
 const TOOLKIT_URL = process.env.EXPO_PUBLIC_TOOLKIT_URL as string;
 const SECRET_KEY = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY as string;
 
+// Verify this model name against toolkit docs
 const MODEL = "google/gemini-3.1-flash-lite";
 
 const SYSTEM_PROMPT = `You are a grocery receipt OCR engine. Your job is to determine if the image is a receipt and extract store + line items.
@@ -20,7 +21,7 @@ Rules:
 - is_receipt: true if the image shows a grocery receipt or store receipt. false if it's anything else (person, landscape, screenshot, document, etc).
 - Store name: extract from the receipt header/logo. If unknown, use "Unknown Store".
 - Items: every line that has a product name AND a price.
-- IGNORE: tax lines, totals, subtotals, discounts, coupons, bottle deposits, CRV, bag fees, membership savings, and blank lines. Do NOT include these as items.
+- IGNORE: tax lines, totals, subtotals, discounts, coupons, bottle deposits, CRV, bag fees, membership savings, loyalty points, fuel rewards, gift card transactions, payment method lines (cash/card tender), balance due, change given, and blank lines. Do NOT include these as items.
 - Prices: numeric only, no currency symbols. For example 4.99 not "$4.99". Round to 2 decimal places.
 - Names: clean product names — strip store codes but keep size info (e.g. "Large Eggs 12ct").
 - quantity: the numeric count or size (e.g. 12 for "12ct", 16 for "16oz", 1 for "1 gal", 2 for "2 lb"). Default to 1 if no quantity is visible on the line.
@@ -69,7 +70,7 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
           ],
         },
       ],
-      max_tokens: 2000,
+      max_tokens: 4000,
       temperature: 0,
     }),
   });
@@ -104,7 +105,9 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
 
   // Receipt guard — reject non-receipt images early
   if (json.is_receipt === false) {
-    throw new Error("INVALID_IMAGE: The image does not appear to be a grocery receipt. Please scan a clear receipt.");
+    const err = new Error("Please scan a clear grocery receipt.");
+    (err as any).code = "INVALID_IMAGE";
+    throw err;
   }
 
   if (!json.store || !Array.isArray(json.items)) {
@@ -126,7 +129,7 @@ export async function scanReceipt(imageUri: string): Promise<OcrResult> {
 
       // Unit: default to "ea" if missing, normalize known aliases
       const rawUnit = item.unit ? String(item.unit).trim().toLowerCase() : "";
-      const unit = VALID_UNITS.has(rawUnit) ? rawUnit : rawUnit || "ea";
+      const unit = VALID_UNITS.has(rawUnit) ? rawUnit : "ea";
 
       // Category: validate against known set
       const rawCat = item.category ? String(item.category).trim() : "";

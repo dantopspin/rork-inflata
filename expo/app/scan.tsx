@@ -124,7 +124,8 @@ export default function ScanScreen() {
       setStage("review");
     } catch (err) {
       console.log("[scan] gallery OCR failed", err);
-      setErrorMessage(err instanceof Error ? err.message : String(err ?? ""));
+      const code = (err as any).code;
+      setErrorMessage(code === "INVALID_IMAGE" ? "INVALID_IMAGE" : err instanceof Error ? err.message : String(err ?? ""));
       setStage("error");
     }
   };
@@ -174,7 +175,8 @@ export default function ScanScreen() {
     } catch (err) {
       console.log("[scan] AI OCR failed, using fallback", err);
       // Fallback: show error and allow retry
-      setErrorMessage(err instanceof Error ? err.message : String(err ?? ""));
+      const code = (err as any).code;
+      setErrorMessage(code === "INVALID_IMAGE" ? "INVALID_IMAGE" : err instanceof Error ? err.message : String(err ?? ""));
       setStage("error");
     }
   };
