@@ -123,12 +123,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
       );
     });
 
-    if (spikeItems.length > 0) {
+    // The "Price Spike" push notification is a premium feature. Gate it on
+    // an active entitlement AND the user's notification opt-in so free users
+    // never receive the paid alert (honors the paywall promise + no revenue leak).
+    if (spikeItems.length > 0 && entitlement.active && notificationsEnabled) {
       sendSpikeAlert(spikeItems);
     }
 
     setScans((prev) => [...prev, scan]);
-  }, [scans]);
+  }, [scans, entitlement, notificationsEnabled]);
 
   const toggleWatchlist = useCallback((key: string) => {
     setWatchlist((prev) => {

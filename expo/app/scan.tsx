@@ -64,11 +64,16 @@ export default function ScanScreen() {
   // Prior price averages for rip-off guardrail (per itemKey)
   const priorAvgPrice = (() => {
     const m = new Map<string, { total: number; count: number }>();
-    for (const s of scans) for (const it of s.items) {
-      const e = m.get(it.itemKey) ?? { total: 0, count: 0 };
-      e.total += it.price;
-      e.count += 1;
-      m.set(it.itemKey, e);
+    // Skip baseline estimates so SPIKE badges compare real store prices
+    // to real history, not to the user's own 90-day-old onboarding guesses.
+    for (const s of scans) {
+      if (s.source !== "scan") continue;
+      for (const it of s.items) {
+        const e = m.get(it.itemKey) ?? { total: 0, count: 0 };
+        e.total += it.price;
+        e.count += 1;
+        m.set(it.itemKey, e);
+      }
     }
     const avg = new Map<string, number>();
     for (const [k, v] of m) avg.set(k, v.total / v.count);
@@ -78,10 +83,15 @@ export default function ScanScreen() {
   // Best (cheapest) store per itemKey across all past scans
   const bestStoreMap = (() => {
     const m = new Map<string, { price: number; store: string }>();
-    for (const s of scans) for (const it of s.items) {
-      const existing = m.get(it.itemKey);
-      if (!existing || it.price < existing.price) {
-        m.set(it.itemKey, { price: it.price, store: s.store });
+    // Skip baseline estimates so the "Cross-Store Price Check" card only
+    // names real stores the user has actually visited.
+    for (const s of scans) {
+      if (s.source !== "scan") continue;
+      for (const it of s.items) {
+        const existing = m.get(it.itemKey);
+        if (!existing || it.price < existing.price) {
+          m.set(it.itemKey, { price: it.price, store: s.store });
+        }
       }
     }
     return m;
@@ -219,8 +229,13 @@ export default function ScanScreen() {
 
     const wasFirstScan = realScanCount(scans) === 0;
 
+    // Mirror AppProvider.addScan: skip baseline estimates so the "X items
+    // spiked this trip" count compares to real history, not onboarding guesses.
     const priorPrice = new Map<string, number>();
-    for (const s of scans) for (const it of s.items) priorPrice.set(it.itemKey, it.price);
+    for (const s of scans) {
+      if (s.source !== "scan") continue;
+      for (const it of s.items) priorPrice.set(it.itemKey, it.price);
+    }
     const spikes = cleaned.filter((c) => {
       const p = priorPrice.get(c.itemKey);
       return p && c.price > p * 1.05;
