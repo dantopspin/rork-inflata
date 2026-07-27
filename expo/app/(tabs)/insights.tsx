@@ -10,7 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PaywallSheet } from "@/components/PaywallSheet";
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtUSD } from "@/lib/format";
-import { aggregateItems, nextTripEstimate } from "@/lib/inflation";
+import { aggregateItems, effectivePriceChange, nextTripEstimate } from "@/lib/inflation";
 import { STAPLES } from "@/lib/seed";
 import { useApp } from "@/providers/AppProvider";
 
@@ -111,11 +111,13 @@ export default function Insights() {
   const volatile = useMemo(() => {
     const stats = aggregateItems(scans);
     return stats
-      .filter((s) => s.history.length >= 2)
+      // Require ≥2 REAL scans — a baseline + 1 real scan has no real trend.
+      .filter((s) => s.realAppearances >= 2)
       .sort((a, b) => {
-        // Prefer unit-price change for volatility ranking when available
-        const aVal = Math.abs(a.unitPriceChange ?? a.pctChange);
-        const bVal = Math.abs(b.unitPriceChange ?? b.pctChange);
+        // Use effectivePriceChange so items without unit-quantity data still
+        // rank by their raw-price movement, matching the rest of the app.
+        const aVal = Math.abs(effectivePriceChange(a));
+        const bVal = Math.abs(effectivePriceChange(b));
         return bVal - aVal;
       })
       .slice(0, 5);
@@ -134,11 +136,12 @@ export default function Insights() {
   const volatileData: { key: string; name: string; pctChange: number; unitPrice?: number; unitMeasure?: string; isOutlier?: boolean }[] =
     volatile.length
       ? volatile
-          .filter((v) => v.unitPriceChange != null)
+          // Use effectivePriceChange so the section isn't silently empty for
+          // users whose receipts lack clean unit-quantity data.
           .map((v) => ({
             key: v.key,
             name: v.name,
-            pctChange: v.unitPriceChange!,
+            pctChange: effectivePriceChange(v),
             unitPrice: v.canonicalUnitPrice,
             unitMeasure: v.unitMeasure,
             isOutlier: v.isOutlier ?? false,

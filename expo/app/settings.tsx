@@ -214,10 +214,21 @@ export default function Settings() {
             onPress={() => setFreqOpen(true)}
             chevron
           />
-          {/* Switch row: for unsubscribed users the switch is visually and functionally
-              disabled — value is forced false, onValueChange shows paywall. Accessibility
-              announces the locked state so screen readers convey the restriction. */}
-          <View style={styles.toggleRow}>
+          {/* Switch row: for unsubscribed users the switch is visually disabled
+              AND the whole row is wrapped in a Pressable that opens the paywall.
+              A disabled iOS Switch does not fire onValueChange, so without the
+              Pressable wrapper the paywall branch in toggleNotifications would
+              be unreachable — a conversion dead end. */}
+          <Pressable
+            onPress={() => { if (!subscribed) setPaywall(true); }}
+            style={styles.toggleRow}
+            accessibilityRole={subscribed ? undefined : "button"}
+            accessibilityLabel={
+              subscribed
+                ? `Push notifications ${notifications ? "enabled" : "disabled"}`
+                : "Push notifications locked — upgrade to enable"
+            }
+          >
             {subscribed
               ? <Bell size={20} color={Colors.accent} />
               : <Lock size={20} color={Colors.mutedForeground} />
@@ -234,14 +245,8 @@ export default function Settings() {
               trackColor={{ true: Colors.accent, false: Colors.muted }}
               thumbColor={Colors.white}
               disabled={!subscribed}
-              accessibilityState={{ disabled: !subscribed }}
-              accessibilityLabel={
-                subscribed
-                  ? `Push notifications ${notifications ? "enabled" : "disabled"}`
-                  : "Push notifications locked — upgrade to enable"
-              }
             />
-          </View>
+          </Pressable>
         </Section>
 
         {/* ── DATA ── */}
@@ -264,7 +269,9 @@ export default function Settings() {
                   onPress={async () => {
                     await clearAll();
                     setConfirmClear(false);
-                    router.replace("/(tabs)");
+                    // Go straight to onboarding — OnboardingGuard would
+                    // redirect there anyway, causing a visible double pop.
+                    router.replace("/onboarding");
                   }}
                   style={styles.eraseBtn}
                 >
@@ -294,7 +301,7 @@ export default function Settings() {
         </Section>
 
         <Text style={styles.footer}>
-          {APP_NAME.toUpperCase()} V{APP_VERSION} · ALL DATA LIVES ON THIS DEVICE
+          {APP_NAME.toUpperCase()} V{APP_VERSION} · SCAN HISTORY STORED ON-DEVICE
         </Text>
       </ScrollView>
 

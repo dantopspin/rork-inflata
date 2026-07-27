@@ -269,7 +269,7 @@ export default function Onboarding() {
                 onPress={saveBaseline}
                 style={({ pressed }) => [styles.accentBtn, pressed && { transform: [{ scale: 0.99 }] }]}
               >
-                <Text style={styles.accentBtnText}>SEE MY DASHBOARD</Text>
+                <Text style={styles.accentBtnText}>CONTINUE</Text>
                 <ArrowRight size={16} color={Colors.accentForeground} />
               </Pressable>
             </Animated.View>

@@ -313,7 +313,9 @@ export function itemConfidence(stat: ItemStat): Confidence {
 }
 
 export function totalSpendBaselineVsCurrent(stats: ItemStat[]): number {
-  return stats.reduce((acc, s) => acc + Math.max(0, s.dollarChange), 0);
+  // Return true net change (can be negative). The hero already has a
+  // 2-way color branch, so a drop renders in Colors.success automatically.
+  return stats.reduce((acc, s) => acc + s.dollarChange, 0);
 }
 
 /** Average spend per trip across all real scans. */
@@ -329,7 +331,9 @@ export function nextTripEstimate(scans: Scan[], stats: ItemStat[]): number {
   const avg = averageBasketSize(scans);
   if (!avg) return 0;
   const infl = inflationScore(stats);
-  return avg * (1 + Math.max(0, infl) / 100);
+  // Reflect real direction — don't clamp negative inflation to 0, or the
+  // projected bar can never drop even when prices are falling.
+  return avg * (1 + infl / 100);
 }
 
 /** Weekly burn rate: total 30-day tax projection scaled to 7 days. */
@@ -358,10 +362,12 @@ export function nextTripStrategyItems(stats: ItemStat[]): TripStrategyItem[] {
   if (!stats.length) return [];
 
   return stats
-    .filter((s) => s.appearances >= 2)
+    // Require ≥2 REAL scans — a baseline + 1 real scan has no real trend
+    // and would surface as "AS PLANNED" with 0% volatility.
+    .filter((s) => s.realAppearances >= 2)
     .sort((a, b) => {
-      const scoreA = a.appearances * Math.abs(effectivePriceChange(a));
-      const scoreB = b.appearances * Math.abs(effectivePriceChange(b));
+      const scoreA = a.realAppearances * Math.abs(effectivePriceChange(a));
+      const scoreB = b.realAppearances * Math.abs(effectivePriceChange(b));
       return scoreB - scoreA;
     })
     .slice(0, 3)
@@ -436,8 +442,11 @@ export function hasRecentSpike(stat: ItemStat): boolean {
  * Returns items with known unit-price trends, sorted by highest unit-price increase.
  */
 export function topSpikingItems(stats: ItemStat[], limit: number = 3): ItemStat[] {
+  // Use effectivePriceChange so items without unit-quantity data still
+  // surface when their raw price has clearly spiked. Otherwise the
+  // "TOP 3 PRICE SPIKES" section silently disappears for most users.
   return stats
-    .filter((s) => s.unitPriceChange != null && s.unitPriceChange > 0)
-    .sort((a, b) => (b.unitPriceChange ?? 0) - (a.unitPriceChange ?? 0))
+    .filter((s) => effectivePriceChange(s) > 0)
+    .sort((a, b) => effectivePriceChange(b) - effectivePriceChange(a))
     .slice(0, limit);
 }

@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { Alert, Platform } from "react-native";
+import { Alert, Platform, Share } from "react-native";
 import { AlertTriangle, ArrowLeft, ArrowRight, Lock, MapPin, Ruler, Share2, Shuffle, Star, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -112,6 +112,49 @@ export default function ItemDetail() {
     return ((last - first) / first) * 100;
   }, [unitPriceEntries]);
 
+  // Build a clean, copy-pasteable text summary of this item's price
+  // findings for sharing to messaging apps. Kept plain-text so it pastes
+  // cleanly into iMessage, WhatsApp, Slack, etc.
+  const buildShareText = (): string => {
+    if (!stat) return "";
+    const dir = stat.pctChange > 0 ? "up" : stat.pctChange < 0 ? "down" : "flat";
+    const lines: string[] = [
+      `${stat.name} — price tracking summary`,
+      ``,
+      `First recorded: ${fmtUSD(stat.firstPrice)} (${fmtDateLong(stat.firstDate)})`,
+      `Latest: ${fmtUSD(stat.currentPrice)} (${fmtDateLong(stat.currentDate)})`,
+      `Change: ${fmtPct(stat.pctChange)} (${dir})`,
+      `Out of pocket: ${stat.dollarChange >= 0 ? "+" : ""}${fmtUSD(stat.dollarChange)} vs first`,
+    ];
+    if (stat.cheapestStore && stat.cheapestPrice != null) {
+      lines.push(`Cheapest found at: ${stat.cheapestStore} — ${fmtUSD(stat.cheapestPrice)}`);
+    }
+    if (stat.biggestJumpDate && stat.biggestJumpPct) {
+      lines.push(`Biggest single jump: ${fmtPct(stat.biggestJumpPct)} on ${fmtDate(stat.biggestJumpDate)}`);
+    }
+    if (stat.history.length > 2) {
+      lines.push(``, `All recorded prices:`);
+      for (const h of [...stat.history].reverse()) {
+        lines.push(`  ${fmtDate(h.date)} — ${fmtUSD(h.price)} @ ${h.store}${h.fromBaseline ? " (estimated)" : ""}`);
+      }
+    }
+    lines.push(``, `Tracked with Inflata.`);
+    return lines.join("\n");
+  };
+
+  const shareTextSummary = async () => {
+    if (!stat) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Share.share({
+        message: buildShareText(),
+        title: `${stat.name} — price history`,
+      });
+    } catch {
+      // user cancelled — no-op
+    }
+  };
+
   if (!hydrated) return <View style={styles.screen} />;
 
   if (!stat) {
@@ -169,7 +212,7 @@ export default function ItemDetail() {
         ) : null}
 
         <Text style={styles.name}>{stat.name}</Text>
-        <Text style={styles.since}>
+        <Text style={[styles.since, { color: stat.pctChange > 0 ? Colors.accent : stat.pctChange < 0 ? Colors.success : Colors.mutedForeground }]}>
           {fmtPct(stat.pctChange)} since {fmtDateLong(stat.firstDate)}
         </Text>
         <Text style={styles.pocket}>
@@ -412,6 +455,20 @@ export default function ItemDetail() {
           </View>
         </View>
 
+        {/* Share text summary — clean, copy-pasteable price findings for any messaging app */}
+        <Pressable
+          onPress={shareTextSummary}
+          style={({ pressed }) => [
+            styles.textShareBtn,
+            pressed && { transform: [{ scale: 0.99 }] },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`Share ${stat.name} price summary as text`}
+        >
+          <Share2 size={15} color={Colors.foreground} strokeWidth={2} />
+          <Text style={styles.textShareBtnText}>SHARE PRICE SUMMARY</Text>
+        </Pressable>
+
         <Pressable
           onPress={() => {
             if (!subscribed) setPaywall(true);
@@ -477,7 +534,10 @@ const styles = StyleSheet.create({
   },
 
   name: { marginTop: 24, fontFamily: Fonts.extrabold, fontSize: 36, lineHeight: 40, letterSpacing: -1.2, color: Colors.foreground },
-  since: { marginTop: 8, fontFamily: Fonts.bold, fontSize: 16, color: Colors.accent },
+  // Default color is mutedForeground; the inline 3-way color branch in the
+  // view body overrides it for spikes (accent) and drops (success) so a
+  // price drop never renders in warning red.
+  since: { marginTop: 8, fontFamily: Fonts.bold, fontSize: 16, color: Colors.mutedForeground },
   pocket: { marginTop: 6, fontSize: 14, lineHeight: 20, color: Colors.foreground, fontFamily: Fonts.regular },
   bold: { fontFamily: Fonts.extrabold },
   baselineLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 1, color: Colors.mutedForeground },
@@ -646,6 +706,21 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   shareBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.accentForeground },
+  // Text-summary share button — secondary visual weight (outlined, not filled)
+  // so it reads as a lighter-weight companion to the primary Spike Card share.
+  textShareBtn: {
+    marginTop: 32,
+    height: 48,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    backgroundColor: Colors.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  textShareBtnText: { fontFamily: Fonts.bold, fontSize: 12, letterSpacing: 0.5, color: Colors.foreground },
   lockBtn: {
     marginTop: 32,
     height: 52,

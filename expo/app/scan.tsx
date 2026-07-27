@@ -2,13 +2,14 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { AlertTriangle, Check, Image, Loader2, Trash2, X } from "lucide-react-native";
+import { AlertTriangle, Check, Image, Loader2, Minus, Trash2, TrendingDown, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -26,6 +27,11 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+  type SharedValue,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -100,7 +106,18 @@ export default function ScanScreen() {
   const pickFromGallery = async () => {
     if (hardGate) { setPaywall(true); return; }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
+    if (!perm.granted) {
+      // Don't fail silently — tell the user why nothing happened and how to fix it.
+      Alert.alert(
+        "Photos access needed",
+        "Enable photo library access in Settings to scan from your gallery.",
+        [
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
+      return;
+    }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -273,10 +290,34 @@ export default function ScanScreen() {
       return n;
     });
   const deleteSelected = () => {
-    setItems((prev) => prev.filter((i) => !selected.has(i.id)));
-    setSelected(new Set());
+    if (selected.size === 0) return;
+    Alert.alert(
+      `Remove ${selected.size} ${selected.size === 1 ? "item" : "items"}?`,
+      "These items will be removed from this trip. You can re-scan the receipt if needed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => {
+          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setItems((prev) => prev.filter((i) => !selected.has(i.id)));
+          setSelected(new Set());
+        } },
+      ],
+    );
   };
-  const deleteOne = (id: string) => setItems((prev) => prev.filter((i) => i.id !== id));
+  const deleteOne = (id: string) => {
+    Alert.alert(
+      "Remove this item?",
+      "It will be removed from this trip. You can re-scan the receipt if needed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => {
+          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setItems((prev) => prev.filter((i) => i.id !== id));
+          setSelected((p) => { const n = new Set(p); n.delete(id); return n; });
+        } },
+      ],
+    );
+  };
 
   return (
     <View style={styles.screen}>
@@ -326,7 +367,18 @@ export default function ScanScreen() {
                   >
                     <Text style={styles.permissionBtnText}>ENABLE CAMERA</Text>
                   </Pressable>
-                ) : null}
+                ) : (
+                  // Permission permanently denied — the system prompt can't be
+                  // shown again. Offer a way out so the user isn't dead-ended.
+                  <Pressable
+                    onPress={() => Linking.openSettings()}
+                    style={styles.permissionBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open device settings to enable camera"
+                  >
+                    <Text style={styles.permissionBtnText}>OPEN SETTINGS</Text>
+                  </Pressable>
+                )}
               </View>
             ) : (
               <View style={styles.demoNote}>
@@ -359,14 +411,7 @@ export default function ScanScreen() {
       ) : null}
 
       {effectiveStage === "scanning" ? (
-        <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.centered}>
-          <ActivityIndicator size="large" color={Colors.accent} />
-          <Text style={styles.scanningKicker}>READING LINE ITEMS</Text>
-          <Text style={styles.scanningTitle}>AI extracting prices…</Text>
-          {capturedUri ? (
-            <Text style={styles.scanningHint}>Analyzing your receipt</Text>
-          ) : null}
-        </Animated.View>
+        <ScanningState capturedUri={capturedUri} />
       ) : null}
 
       {effectiveStage === "error" ? (
@@ -637,6 +682,8 @@ function ReviewView({
               const avg = priorAvgPrice.get(it.itemKey);
               const best = bestStoreMap.get(it.itemKey);
               const isSpike = avg !== undefined && avg > 0 && price > avg * 1.1;
+              const isDrop = avg !== undefined && avg > 0 && price < avg * 0.9;
+              const isFlat = avg !== undefined && avg > 0 && !isSpike && !isDrop;
               return (
               <SwipeRow key={it.id} onDelete={() => deleteOne(it.id)}>
                 <View style={styles.itemRow}>
@@ -674,10 +721,28 @@ function ReviewView({
                           }
                           keyboardType="decimal-pad"
                           returnKeyType="done"
-                          style={[styles.priceInput, isSpike && styles.priceInputSpike]}
+                          style={[
+                            styles.priceInput,
+                            isSpike && styles.priceInputSpike,
+                            isDrop && styles.priceInputDrop,
+                          ]}
                         />
+                        {/* Color-coded trend badge vs prior recorded entry */}
                         {isSpike ? (
-                          <Text style={styles.spikeBadge}>SPIKE</Text>
+                          <View style={[styles.trendBadge, styles.trendBadgeUp]}>
+                            <TrendingUp size={9} color={Colors.accentForeground} strokeWidth={3} />
+                            <Text style={styles.trendBadgeText}>UP</Text>
+                          </View>
+                        ) : isDrop ? (
+                          <View style={[styles.trendBadge, styles.trendBadgeDown]}>
+                            <TrendingDown size={9} color={Colors.white} strokeWidth={3} />
+                            <Text style={styles.trendBadgeText}>DOWN</Text>
+                          </View>
+                        ) : isFlat ? (
+                          <View style={[styles.trendBadge, styles.trendBadgeFlat]}>
+                            <Minus size={9} color={Colors.mutedForeground} strokeWidth={3} />
+                            <Text style={[styles.trendBadgeText, { color: Colors.mutedForeground }]}>FLAT</Text>
+                          </View>
                         ) : null}
                       </View>
                     </View>
@@ -709,6 +774,10 @@ function ReviewView({
                     {isSpike ? (
                       <Text style={styles.spikeWarn}>
                         {((price - avg!) / avg! * 100).toFixed(0)}% above your avg of ${avg!.toFixed(2)}
+                      </Text>
+                    ) : isDrop ? (
+                      <Text style={styles.dropWarn}>
+                        {Math.abs((price - avg!) / avg! * 100).toFixed(0)}% below your avg of ${avg!.toFixed(2)}
                       </Text>
                     ) : null}
                     {avg !== undefined ? (
@@ -759,6 +828,12 @@ function ReviewView({
             >
               <Text style={styles.saveBtnDarkText}>UPGRADE TO SAVE SCAN</Text>
             </Pressable>
+          ) : items.length === 0 ? (
+            // No items left to save — don't let the button look frozen.
+            // Disable it and relabel so the user knows what to do next.
+            <View style={[styles.saveBtn, { backgroundColor: Colors.muted, shadowOpacity: 0, elevation: 0 }]}>
+              <Text style={[styles.saveBtnText, { color: Colors.mutedForeground }]}>ADD AT LEAST ONE ITEM</Text>
+            </View>
           ) : (
             <Pressable
               onPress={onSave}
@@ -962,6 +1037,87 @@ function InflationDiscovery({
           <Text style={styles.discoveryBtnText}>SEE MY NEW SCORE</Text>
         </Pressable>
       </ScrollView>
+    </Animated.View>
+  );
+}
+
+/**
+ * One shimmering skeleton row. Extracted so useAnimatedStyle runs at the top
+ * level of a component (Rules of Hooks) rather than inside a .map() callback.
+ */
+function SkeletonRow({ index, phase }: { index: number; phase: SharedValue<number> }) {
+  const rowStyle = useAnimatedStyle(() => ({
+    opacity: 0.25 + ((phase.value + index * 0.18) % 1) * 0.55,
+  }));
+  return (
+    <View style={styles.scanSkeletonRow}>
+      <Animated.View style={[styles.scanSkeletonBar, { width: `${62 - index * 6}%` }, rowStyle]} />
+      <Animated.View style={[styles.scanSkeletonBarShort, rowStyle]} />
+    </View>
+  );
+}
+
+/**
+ * Scanning state — replaces the bare ActivityIndicator with a layered
+ * progress animation: an indeterminate scanline sweep over a receipt
+ * skeleton, plus shimmering placeholder line items. Gives the user real
+ * feedback that the image is being read, not just a frozen spinner.
+ */
+function ScanningState({ capturedUri }: { capturedUri: string | null }) {
+  // Indeterminate sweep: 0 → 1, looping with a slight ease-in-out.
+  const sweep = useSharedValue(0);
+  useEffect(() => {
+    sweep.value = 0;
+    sweep.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 0 }),
+      ),
+      -1,
+      false,
+    );
+  }, [sweep]);
+
+  const sweepStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sweep.value * 180 }],
+    opacity: 0.55 + sweep.value * 0.35,
+  }));
+
+  // Shimmer pulse for the skeleton rows. Shared via props so each row
+  // can stagger its phase without its own animation loop.
+  const shimmer = useSharedValue(0);
+  useEffect(() => {
+    shimmer.value = 0;
+    shimmer.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.3, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+      ),
+      -1,
+      true,
+    );
+  }, [shimmer]);
+
+  const skeletonRows = [0, 1, 2, 3, 4];
+
+  return (
+    <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.centered}>
+      {/* Receipt skeleton with animated scanline */}
+      <View style={styles.scanSkeletonCard}>
+        <View style={styles.scanSkeletonHeader} />
+        <View style={styles.scanSkeletonBody}>
+          <Animated.View style={[styles.scanSweepLine, sweepStyle]} />
+          {skeletonRows.map((i) => (
+            <SkeletonRow key={i} index={i} phase={shimmer} />
+          ))}
+        </View>
+      </View>
+
+      <Text style={styles.scanningKicker}>READING LINE ITEMS</Text>
+      <Text style={styles.scanningTitle}>AI extracting prices…</Text>
+      <Text style={styles.scanningHint}>
+        {capturedUri ? "Analyzing your receipt" : "Processing image"}
+      </Text>
     </Animated.View>
   );
 }
@@ -1210,6 +1366,58 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   spikeWarn: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.accent },
+  dropWarn: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.success },
+  priceInputDrop: {
+    backgroundColor: "rgba(16,185,129,0.12)",
+    color: Colors.success,
+  },
+  // Color-coded trend badge — UP / DOWN / FLAT vs prior recorded entry.
+  trendBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  trendBadgeText: { fontFamily: Fonts.bold, fontSize: 8, letterSpacing: 0.8, color: Colors.white },
+  trendBadgeUp: { backgroundColor: Colors.accent },
+  trendBadgeDown: { backgroundColor: Colors.success },
+  trendBadgeFlat: { backgroundColor: Colors.muted, borderWidth: 1, borderColor: Colors.border },
+
+  // Scanning skeleton + animated scanline
+  scanSkeletonCard: {
+    width: 220,
+    height: 200,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    overflow: "hidden",
+    marginBottom: 20,
+  },
+  scanSkeletonHeader: {
+    height: 18,
+    margin: 12,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  scanSkeletonBody: { paddingHorizontal: 12, gap: 12, overflow: "hidden" },
+  scanSkeletonRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  scanSkeletonBar: { height: 10, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.18)" },
+  scanSkeletonBarShort: { width: 40, height: 10, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.18)" },
+  scanSweepLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 3,
+    backgroundColor: Colors.accent,
+    shadowColor: Colors.accent,
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    zIndex: 2,
+  },
   storeHint: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: Colors.mutedForeground },
   ocrLabel: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.3, color: "rgba(115,115,115,0.7)" },
   saveBar: {

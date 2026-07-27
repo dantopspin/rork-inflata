@@ -395,6 +395,10 @@ function RecentEvidenceModal({
     for (let i = 1; i < spikeItem.history.length; i++) {
       const prev = spikeItem.history[i - 1];
       const cur = spikeItem.history[i];
+      // Skip transitions that start from a baseline estimate — the gap
+      // between a 90-day-old guess and a real store price is not a real
+      // spike and would mislead the Spike Evidence before/after cards.
+      if (prev.fromBaseline) continue;
       if (prev.price <= 0) continue;
       const pct = ((cur.price - prev.price) / prev.price) * 100;
       if (pct > 0 && (!bestPair || pct > bestPair.pct)) {
@@ -547,7 +551,7 @@ function EmptyState() {
         {([
           ["Real Cost", "We track what it actually cost you.", () => <CircleDollarSign size={18} color={Colors.accent} strokeWidth={1.8} />],
           ["Real You", "Compared only to your own history.", () => <Hash size={18} color={Colors.accent} strokeWidth={1.8} />],
-          ["On-Device", "Receipts never leave your phone.", () => <Zap size={18} color={Colors.accent} strokeWidth={1.8} />],
+          ["On-Device", "Scan history never leaves your phone.", () => <Zap size={18} color={Colors.accent} strokeWidth={1.8} />],
         ] as const).map(([title, body, renderIcon]) => {
           const cardContent = (
             <View style={styles.featureCard}>
