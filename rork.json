@@ -6,7 +6,7 @@
       "path": "expo",
       "framework": "react-native",
       "settings": {
-        "displayName": "Inflata",
+        "displayName": "Grocery Price Tracker: Inflata",
         "iosBundleId": "app.rork.inflata",
         "androidPackage": "app.rork.inflata"
       }
