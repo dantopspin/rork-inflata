@@ -108,8 +108,9 @@ export default function Insights() {
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [scans]);
 
+  const stats = useMemo(() => aggregateItems(scans), [scans]);
+
   const volatile = useMemo(() => {
-    const stats = aggregateItems(scans);
     return stats
       // Require ≥2 REAL scans — a baseline + 1 real scan has no real trend.
       .filter((s) => s.realAppearances >= 2)
@@ -121,12 +122,11 @@ export default function Insights() {
         return bVal - aVal;
       })
       .slice(0, 5);
-  }, [scans]);
+  }, [stats]);
 
   const categories = useMemo(() => computeCategories(scans), [scans]);
 
   // Projected next trip estimate
-  const stats = useMemo(() => aggregateItems(scans), [scans]);
   const projectedNext = useMemo(() => nextTripEstimate(scans, stats), [scans, stats]);
 
   // Only show real data — never fabricate demo data for SUBSCRIBED users.

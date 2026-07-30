@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingDown, TrendingUp } from "lucide-react-native";
-import { useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, SlideInUp } from "react-native-reanimated";
 
@@ -61,10 +61,9 @@ export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { hydrated, scans, frequency, subscribed, watchlist, toggleWatchlist } = useApp();
 
-  const stat = useMemo(() => {
-    const stats = withOverspend(aggregateItems(scans), frequency);
-    return stats.find((s) => s.key === id);
-  }, [scans, frequency, id]);
+  const allStats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
+
+  const stat = useMemo(() => allStats.find((s) => s.key === id) ?? null, [allStats, id]);
 
   const [paywall, setPaywall] = useState<boolean>(false);
   const [storeFilter, setStoreFilter] = useState<string>("ALL");
@@ -72,8 +71,25 @@ export default function ItemDetail() {
   const cardRef = useRef<RNView>(null);
   const hapticFired = useRef<boolean>(false);
 
-  // All item stats for cross-item comparison (smart substitution)
-  const allStats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
+  // Weekly price change: compares the latest price to the price ~7 days prior.
+  // Falls back to the earliest entry if no data point is at least a week old.
+  const weeklyChange = useMemo(() => {
+    if (!stat || stat.history.length < 2) return null;
+    const sorted = [...stat.history].sort((a, b) => a.date.localeCompare(b.date));
+    const latest = sorted[sorted.length - 1];
+    const latestMs = new Date(latest.date).getTime();
+    const weekAgo = latestMs - 7 * 24 * 60 * 60 * 1000;
+    let anchor: { price: number } | null = null;
+    for (let i = sorted.length - 2; i >= 0; i--) {
+      if (new Date(sorted[i].date).getTime() <= weekAgo) {
+        anchor = sorted[i];
+        break;
+      }
+    }
+    if (!anchor) anchor = sorted[0];
+    if (anchor.price <= 0) return null;
+    return ((latest.price - anchor.price) / anchor.price) * 100;
+  }, [stat]);
 
   // Find cheaper alternatives in the same food category when price spikes
   const alternatives = useMemo(() => {
@@ -230,7 +246,31 @@ export default function ItemDetail() {
           </View>
         ) : null}
 
-        <Text style={styles.name}>{stat.name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{stat.name}</Text>
+          {weeklyChange != null ? (
+            <View
+              style={[
+                styles.weeklyBadge,
+                { backgroundColor: weeklyChange > 0 ? "rgba(245,72,27,0.10)" : weeklyChange < 0 ? "rgba(16,185,129,0.12)" : Colors.muted },
+              ]}
+            >
+              {weeklyChange > 0 ? (
+                <TrendingUp size={9} color={Colors.accent} strokeWidth={2.5} />
+              ) : weeklyChange < 0 ? (
+                <TrendingDown size={9} color={Colors.success} strokeWidth={2.5} />
+              ) : null}
+              <Text
+                style={[
+                  styles.weeklyBadgeText,
+                  { color: weeklyChange > 0 ? Colors.accent : weeklyChange < 0 ? Colors.success : Colors.mutedForeground },
+                ]}
+              >
+                {fmtPct(weeklyChange)} vs last wk
+              </Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={[styles.since, { color: stat.pctChange > 0 ? Colors.accent : stat.pctChange < 0 ? Colors.success : Colors.mutedForeground }]}>
           {fmtPct(stat.pctChange)} since {fmtDateLong(stat.firstDate)}
         </Text>
@@ -587,7 +627,7 @@ export default function ItemDetail() {
 // Store Filter Modal
 // ─────────────────────────────────────────────
 
-function StoreFilterModal({
+const StoreFilterModal = memo(function StoreFilterModal({
   visible,
   current,
   stores,
@@ -653,7 +693,7 @@ function StoreFilterModal({
       </View>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
@@ -687,7 +727,29 @@ const styles = StyleSheet.create({
     color: Colors.success,
   },
 
-  name: { marginTop: 24, fontFamily: Fonts.extrabold, fontSize: 36, lineHeight: 40, letterSpacing: -1.2, color: Colors.foreground },
+  nameRow: {
+    marginTop: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  name: { fontFamily: Fonts.extrabold, fontSize: 36, lineHeight: 40, letterSpacing: -1.2, color: Colors.foreground, flexShrink: 1 },
+  weeklyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: Radius.full,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    marginTop: 6,
+    flexShrink: 0,
+  },
+  weeklyBadgeText: {
+    fontFamily: Fonts.bold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
   // Default color is mutedForeground; the inline 3-way color branch in the
   // view body overrides it for spikes (accent) and drops (success) so a
   // price drop never renders in warning red.

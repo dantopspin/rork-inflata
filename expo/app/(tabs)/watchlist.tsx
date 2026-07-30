@@ -1,7 +1,7 @@
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { ArrowDownUp, ArrowRight, ChevronDown, ChevronRight, Search, Star, Store, Trash2, X } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeInDown, SlideInUp } from "react-native-reanimated";
 import { Swipeable } from "react-native-gesture-handler";
@@ -44,6 +44,9 @@ export default function Watchlist() {
         break;
       case "recent":
         list.sort((a, b) => b.currentDate.localeCompare(a.currentDate));
+        break;
+      case "name":
+        list.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case "savings":
       default:
@@ -177,101 +180,19 @@ export default function Watchlist() {
           </View>
         ) : (
           <View style={{ gap: 10, marginTop: 24 }}>
-            {filtered.map((item, i) => {
-              const savings = item.currentPrice - (item.cheapestPrice ?? item.currentPrice);
-              const savingsPct =
-                item.currentPrice > 0
-                  ? Math.round((savings / item.currentPrice) * 100)
-                  : 0;
-
-              return (
-                <Animated.View
-                  key={item.key}
-                  entering={FadeInDown.duration(350).delay(i * 60)}
-                >
-                  <Swipeable
-                    renderRightActions={() => (
-                      <View style={styles.deleteAction}>
-                        <Trash2 size={20} color={Colors.destructiveForeground} strokeWidth={2.2} />
-                      </View>
-                    )}
-                    overshootRight={false}
-                    rightThreshold={60}
-                    onSwipeableOpen={() => {
-                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      toggleWatchlist(item.key);
-                    }}
-                  >
-                  <Pressable
-                    onPress={() => {
-                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      router.push(`/item/${item.key}`);
-                    }}
-                    style={({ pressed }) => [
-                      styles.row,
-                      pressed && { backgroundColor: Colors.muted },
-                      watchlist.includes(item.key) && styles.rowPinned,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.name}: cheapest at ${item.cheapestStore}, ${fmtUSD(item.cheapestPrice ?? 0)}, save ${fmtUSD(savings)}`}
-                  >
-                    {/* Star toggle — pin to top of watchlist */}
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        toggleWatchlist(item.key);
-                      }}
-                      hitSlop={8}
-                      accessibilityLabel={watchlist.includes(item.key) ? "Unpin from top" : "Pin to top"}
-                      accessibilityRole="button"
-                      style={styles.starBtn}
-                    >
-                      <Star
-                        size={16}
-                        color={watchlist.includes(item.key) ? Colors.amber : Colors.mutedForeground}
-                        fill={watchlist.includes(item.key) ? Colors.amber : "none"}
-                        strokeWidth={2}
-                      />
-                    </Pressable>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      <View style={styles.storeRow}>
-                        <Store size={11} color={Colors.accent} strokeWidth={2} />
-                        <Text style={styles.storeName}>
-                          Cheapest at {item.cheapestStore}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={{ alignItems: "flex-end" }}>
-                      <FlashPrice
-                        price={item.cheapestPrice ?? item.currentPrice}
-                        style={styles.cheapestPrice}
-                      />
-                      {savings > 0 ? (
-                        <View style={styles.savingsBadge}>
-                          <Text style={styles.savingsText}>
-                            SAVE {fmtUSD(savings)} ({savingsPct}%)
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={styles.bestPriceBadge}>
-                          <Text style={styles.bestPriceText}>BEST PRICE</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ marginLeft: 6 }}>
-                      <ChevronRight
-                        size={14}
-                        color={Colors.mutedForeground}
-                      />
-                    </View>
-                  </Pressable>
-                  </Swipeable>
-                </Animated.View>
-              );
-            })}
+            {filtered.map((item, i) => (
+              <WatchlistRow
+                key={item.key}
+                item={item}
+                index={i}
+                isPinned={watchlist.includes(item.key)}
+                onTogglePin={toggleWatchlist}
+                onOpen={(key) => {
+                  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push(`/item/${key}`);
+                }}
+              />
+            ))}
           </View>
         )}
       </ScrollView>
@@ -294,13 +215,14 @@ export default function Watchlist() {
 // Sort mode types & labels
 // ─────────────────────────────────────────────
 
-type SortMode = "savings" | "lowest" | "highest" | "recent";
+type SortMode = "savings" | "lowest" | "highest" | "recent" | "name";
 
 const SORT_LABELS: Record<SortMode, string> = {
   savings: "Best savings",
   lowest: "Lowest price",
   highest: "Highest price",
   recent: "Date added",
+  name: "Name (A-Z)",
 };
 
 const SORT_OPTIONS: { id: SortMode; label: string; sub: string }[] = [
@@ -308,9 +230,124 @@ const SORT_OPTIONS: { id: SortMode; label: string; sub: string }[] = [
   { id: "lowest", label: "Lowest price", sub: "Cheapest items first" },
   { id: "highest", label: "Highest price", sub: "Most expensive items first" },
   { id: "recent", label: "Date added", sub: "Recently scanned first" },
+  { id: "name", label: "Name (A-Z)", sub: "Alphabetical by item name" },
 ];
 
-function SortModal({
+const WatchlistRow = memo(function WatchlistRow({
+  item,
+  index,
+  isPinned,
+  onTogglePin,
+  onOpen,
+}: {
+  item: { key: string; name: string; cheapestPrice?: number; cheapestStore?: string; currentPrice: number; currentDate: string };
+  index: number;
+  isPinned: boolean;
+  onTogglePin: (key: string) => void;
+  onOpen: (key: string) => void;
+}) {
+  const savings = item.currentPrice - (item.cheapestPrice ?? item.currentPrice);
+  const savingsPct =
+    item.currentPrice > 0
+      ? Math.round((savings / item.currentPrice) * 100)
+      : 0;
+
+  const renderRightActions = useCallback(
+    () => (
+      <View style={styles.deleteAction}>
+        <Trash2 size={20} color={Colors.destructiveForeground} strokeWidth={2.2} />
+      </View>
+    ),
+    [],
+  );
+
+  const handleSwipeOpen = useCallback(() => {
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onTogglePin(item.key);
+  }, [item.key, onTogglePin]);
+
+  const handlePress = useCallback(() => {
+    onOpen(item.key);
+  }, [item.key, onOpen]);
+
+  const handleStarPress = useCallback(
+    (e: { stopPropagation: () => void }) => {
+      e.stopPropagation();
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onTogglePin(item.key);
+    },
+    [item.key, onTogglePin],
+  );
+
+  return (
+    <Animated.View entering={FadeInDown.duration(350).delay(index * 60)}>
+      <Swipeable
+        renderRightActions={renderRightActions}
+        overshootRight={false}
+        rightThreshold={60}
+        onSwipeableOpen={handleSwipeOpen}
+      >
+        <Pressable
+          onPress={handlePress}
+          style={({ pressed }) => [
+            styles.row,
+            pressed && { backgroundColor: Colors.muted },
+            isPinned && styles.rowPinned,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name}: cheapest at ${item.cheapestStore}, ${fmtUSD(item.cheapestPrice ?? 0)}, save ${fmtUSD(savings)}`}
+        >
+          <Pressable
+            onPress={handleStarPress}
+            hitSlop={8}
+            accessibilityLabel={isPinned ? "Unpin from top" : "Pin to top"}
+            accessibilityRole="button"
+            style={styles.starBtn}
+          >
+            <Star
+              size={16}
+              color={isPinned ? Colors.amber : Colors.mutedForeground}
+              fill={isPinned ? Colors.amber : "none"}
+              strokeWidth={2}
+            />
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.itemName}>{item.name}</Text>
+            <View style={styles.storeRow}>
+              <Store size={11} color={Colors.accent} strokeWidth={2} />
+              <Text style={styles.storeName}>
+                Cheapest at {item.cheapestStore}
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ alignItems: "flex-end" }}>
+            <FlashPrice
+              price={item.cheapestPrice ?? item.currentPrice}
+              style={styles.cheapestPrice}
+            />
+            {savings > 0 ? (
+              <View style={styles.savingsBadge}>
+                <Text style={styles.savingsText}>
+                  SAVE {fmtUSD(savings)} ({savingsPct}%)
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.bestPriceBadge}>
+                <Text style={styles.bestPriceText}>BEST PRICE</Text>
+              </View>
+            )}
+          </View>
+          <View style={{ marginLeft: 6 }}>
+            <ChevronRight size={14} color={Colors.mutedForeground} />
+          </View>
+        </Pressable>
+      </Swipeable>
+    </Animated.View>
+  );
+});
+
+const SortModal = memo(function SortModal({
   visible,
   current,
   onSelect,
@@ -371,7 +408,7 @@ function SortModal({
       </View>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },

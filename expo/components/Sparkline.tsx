@@ -1,8 +1,9 @@
+import { memo } from "react";
 import Svg, { Polyline } from "react-native-svg";
 
 import { Colors } from "@/constants/theme";
 
-export function Sparkline({
+export const Sparkline = memo(function Sparkline({
   prices,
   height = 64,
   stroke = Colors.accent,
@@ -53,4 +54,4 @@ export function Sparkline({
       />
     </Svg>
   );
-}
+});

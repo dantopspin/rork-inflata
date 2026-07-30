@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -10,7 +10,7 @@ import Animated, {
 import { Colors, Fonts } from "@/constants/theme";
 import { Confidence } from "@/types";
 
-export function ConfidenceBadge({ c }: { c: Confidence }) {
+export const ConfidenceBadge = memo(function ConfidenceBadge({ c }: { c: Confidence }) {
   const isLow = c.level === "low";
   const isHigh = c.level === "high";
 
@@ -47,7 +47,7 @@ export function ConfidenceBadge({ c }: { c: Confidence }) {
       <Text style={[styles.label, { color: palette.fg }]}>{c.label}</Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   badge: {

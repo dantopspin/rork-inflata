@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { StyleSheet } from "react-native";
 import Animated, {
   useSharedValue,
@@ -23,7 +23,7 @@ import { fmtUSD } from "@/lib/format";
  * to the base color, giving the user immediate visual feedback that
  * a tracked price was updated during the latest sync.
  */
-export function FlashPrice({
+export const FlashPrice = memo(function FlashPrice({
   price,
   style,
   numberOfLines,
@@ -91,7 +91,7 @@ export function FlashPrice({
       {fmtUSD(price)}
     </Animated.Text>
   );
-}
+});
 
 const styles = StyleSheet.create({
   base: {

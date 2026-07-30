@@ -1,3 +1,4 @@
+import { memo } from "react";
 import Svg, {
   Circle,
   Defs,
@@ -23,7 +24,7 @@ type ChartPoint = {
  * (baseline estimates dimmed), min/max axis labels, and abbreviated date
  * labels along the X axis. Falls back to a flat dash for single-point data.
  */
-export function PriceChart({
+export const PriceChart = memo(function PriceChart({
   data,
   height = 160,
   stroke = Colors.accent,
@@ -197,4 +198,4 @@ export function PriceChart({
       })}
     </Svg>
   );
-}
+});
