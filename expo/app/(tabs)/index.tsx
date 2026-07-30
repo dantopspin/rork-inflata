@@ -403,11 +403,45 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
 }) {
   const insets = useSafeAreaInsets();
   const [confirmClear, setConfirmClear] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
 
   const realScans = useMemo(
     () => [...scans].filter((s) => s.source === "scan").sort((a, b) => b.date.localeCompare(a.date)),
     [scans],
   );
+
+  // Extract unique item categories across all real scans for the filter pills.
+  const uniqueCategories = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of realScans) {
+      for (const it of s.items) {
+        if (it.category) set.add(it.category);
+      }
+    }
+    return Array.from(set).sort();
+  }, [realScans]);
+
+  // Filter scan sessions by selected category — "ALL" shows everything.
+  const filteredScans = useMemo(() => {
+    if (categoryFilter === "ALL") return realScans;
+    return realScans.filter((s) =>
+      s.items.some((it) => it.category === categoryFilter),
+    );
+  }, [realScans, categoryFilter]);
+
+  // Summary: percentage difference between the most recent scan total and
+  // the average total across all scan sessions. Needs ≥2 scans to be useful.
+  const scanSummary = useMemo(() => {
+    if (realScans.length < 2) return null;
+    const totals = realScans.map((s) =>
+      s.items.reduce((a, it) => a + it.price, 0),
+    );
+    const latest = totals[0];
+    const avg = totals.reduce((a, t) => a + t, 0) / totals.length;
+    if (avg <= 0) return null;
+    const pctDiff = ((latest - avg) / avg) * 100;
+    return { latest, avg, pctDiff };
+  }, [realScans]);
 
   const spikePair = useMemo(() => {
     if (!spikeItem || spikeItem.history.length < 2) return null;
@@ -558,12 +592,99 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
                 ) : null}
               </View>
 
-              {!confirmClear && realScans.length > 0 ? (
+              {/* ── Summary: latest scan vs average ── */}
+              {!confirmClear && scanSummary ? (
+                <View style={modalStyles.summaryCard}>
+                  <Text style={modalStyles.summaryLabel}>LATEST VS AVERAGE</Text>
+                  <View style={modalStyles.summaryRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={modalStyles.summarySubLabel}>LATEST</Text>
+                      <Text style={modalStyles.summaryValue}>{fmtUSD(scanSummary.latest)}</Text>
+                    </View>
+                    <View style={{ flex: 1, alignItems: "center" }}>
+                      <Text style={modalStyles.summarySubLabel}>AVERAGE</Text>
+                      <Text style={modalStyles.summaryValue}>{fmtUSD(scanSummary.avg)}</Text>
+                    </View>
+                    <View style={{ flex: 1, alignItems: "flex-end" }}>
+                      <Text style={modalStyles.summarySubLabel}>DIFF</Text>
+                      <Text
+                        style={[
+                          modalStyles.summaryPct,
+                          {
+                            color:
+                              scanSummary.pctDiff > 0
+                                ? Colors.accent
+                                : scanSummary.pctDiff < 0
+                                ? Colors.success
+                                : Colors.mutedForeground,
+                          },
+                        ]}
+                      >
+                        {fmtPct(scanSummary.pctDiff)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* ── Category filter pills ── */}
+              {!confirmClear && uniqueCategories.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={modalStyles.categoryScroll}
+                  contentContainerStyle={modalStyles.categoryScrollContent}
+                >
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.selectionAsync();
+                      setCategoryFilter("ALL");
+                    }}
+                    style={[
+                      modalStyles.categoryPill,
+                      categoryFilter === "ALL" && modalStyles.categoryPillActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        modalStyles.categoryPillText,
+                        categoryFilter === "ALL" && modalStyles.categoryPillTextActive,
+                      ]}
+                    >
+                      ALL
+                    </Text>
+                  </Pressable>
+                  {uniqueCategories.map((cat) => (
+                    <Pressable
+                      key={cat}
+                      onPress={() => {
+                        if (Platform.OS !== "web") Haptics.selectionAsync();
+                        setCategoryFilter(cat);
+                      }}
+                      style={[
+                        modalStyles.categoryPill,
+                        categoryFilter === cat && modalStyles.categoryPillActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          modalStyles.categoryPillText,
+                          categoryFilter === cat && modalStyles.categoryPillTextActive,
+                        ]}
+                      >
+                        {cat.toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
+              {!confirmClear && filteredScans.length > 0 ? (
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   style={{ maxHeight: 200, marginTop: 4 }}
                 >
-                  {realScans.map((s, i) => {
+                  {filteredScans.map((s, i) => {
                     const itemCount = s.items.length;
                     const total = s.items.reduce((a, it) => a + it.price, 0);
                     return (
@@ -571,7 +692,7 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
                         key={s.id}
                         style={[
                           modalStyles.logRow,
-                          i === realScans.length - 1 && { borderBottomWidth: 0 },
+                          i === filteredScans.length - 1 && { borderBottomWidth: 0 },
                         ]}
                       >
                         <View style={{ flex: 1 }}>
@@ -605,6 +726,8 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
                     );
                   })}
                 </ScrollView>
+              ) : !confirmClear && realScans.length > 0 ? (
+                <Text style={modalStyles.empty}>No scans match this filter.</Text>
               ) : null}
             </View>
           ) : null}
@@ -639,7 +762,7 @@ const Header = memo(function Header() {
   );
 });
 
-function EmptyState() {
+const EmptyState = memo(function EmptyState() {
   const insets = useSafeAreaInsets();
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: 0, paddingTop: 40, paddingBottom: insets.bottom + 120 }}>
@@ -687,7 +810,7 @@ function EmptyState() {
       </View>
     </ScrollView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
@@ -1102,5 +1225,77 @@ const modalStyles = StyleSheet.create({
     fontSize: 14,
     color: Colors.foreground,
     fontVariant: ["tabular-nums"],
+  },
+
+  /* ========== SUMMARY CARD (latest vs average) ========== */
+  summaryCard: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: 14,
+  },
+  summaryLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1.5,
+    color: Colors.mutedForeground,
+  },
+  summaryRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  summarySubLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: Colors.mutedForeground,
+  },
+  summaryValue: {
+    marginTop: 3,
+    fontFamily: Fonts.bold,
+    fontSize: 15,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
+  summaryPct: {
+    marginTop: 3,
+    fontFamily: Fonts.extrabold,
+    fontSize: 15,
+    letterSpacing: -0.3,
+    fontVariant: ["tabular-nums"],
+  },
+
+  /* ========== CATEGORY FILTER PILLS ========== */
+  categoryScroll: {
+    marginTop: 10,
+    marginHorizontal: -2,
+  },
+  categoryScrollContent: {
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  categoryPill: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  categoryPillActive: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
+  categoryPillText: {
+    fontFamily: Fonts.bold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    color: Colors.mutedForeground,
+  },
+  categoryPillTextActive: {
+    color: Colors.accent,
   },
 });

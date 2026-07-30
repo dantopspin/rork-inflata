@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Modal,
   Platform,
@@ -77,12 +77,22 @@ export default function Settings() {
       : "Paid"
     : "Free";
 
-  const exportCsv = async () => {
+  const exportCsv = useCallback(async () => {
     if (!subscribed) { setPaywall(true); return; }
-    const rows: string[][] = [["date", "store", "item", "price", "source"]];
+    const rows: string[][] = [["date", "store", "item", "price", "unit_quantity", "unit_measure", "category", "type", "source"]];
     for (const s of scans)
       for (const it of s.items)
-        rows.push([s.date, s.store, it.name, String(it.price), s.source]);
+        rows.push([
+          s.date,
+          s.store,
+          it.name,
+          String(it.price),
+          String(it.unitQuantity ?? ""),
+          it.unitMeasure ?? "",
+          it.category ?? "",
+          it.type ?? "",
+          s.source,
+        ]);
     const csv = rows
       .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -98,7 +108,7 @@ export default function Settings() {
     } catch (e) {
       console.log("[settings] csv export failed", e);
     }
-  };
+  }, [subscribed, scans]);
 
   // Guard the Switch: don't let it flip visually for unsubscribed users.
   const toggleNotifications = async (v: boolean) => {
