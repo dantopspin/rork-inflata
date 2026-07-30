@@ -2,7 +2,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, MapPin, Receipt, Scale, Settings, Shuffle, TrendingDown, TrendingUp, Trash2, X, Zap } from "lucide-react-native";
 import { memo, useMemo, useState } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -405,6 +405,15 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
   const [confirmClear, setConfirmClear] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
 
+  // Animate layout transitions when the category filter changes so scan
+  // rows smoothly slide into their new positions instead of jumping.
+  const animateCategoryFilter = (cat: string) => {
+    if (Platform.OS !== "web") {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    }
+    setCategoryFilter(cat);
+  };
+
   const realScans = useMemo(
     () => [...scans].filter((s) => s.source === "scan").sort((a, b) => b.date.localeCompare(a.date)),
     [scans],
@@ -638,7 +647,7 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
                   <Pressable
                     onPress={() => {
                       if (Platform.OS !== "web") Haptics.selectionAsync();
-                      setCategoryFilter("ALL");
+                      animateCategoryFilter("ALL");
                     }}
                     style={[
                       modalStyles.categoryPill,
@@ -659,7 +668,7 @@ const RecentEvidenceModal = memo(function RecentEvidenceModal({
                       key={cat}
                       onPress={() => {
                         if (Platform.OS !== "web") Haptics.selectionAsync();
-                        setCategoryFilter(cat);
+                        animateCategoryFilter(cat);
                       }}
                       style={[
                         modalStyles.categoryPill,
