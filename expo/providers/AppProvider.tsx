@@ -144,6 +144,18 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setScans((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  // Remove every occurrence of an item (by itemKey) from all scans.
+  // Scans that end up with zero items after removal are pruned.
+  // Also removes the item from the watchlist if pinned.
+  const deleteItem = useCallback((itemKey: string) => {
+    setScans((prev) =>
+      prev
+        .map((s) => ({ ...s, items: s.items.filter((it) => it.itemKey !== itemKey) }))
+        .filter((s) => s.items.length > 0),
+    );
+    setWatchlist((prev) => prev.filter((k) => k !== itemKey));
+  }, []);
+
   // Clear all scan sessions while keeping onboarding, frequency, and
   // watchlist intact — used by the "Clear History" button in the scan
   // logs (Recent Evidence) modal so users can remove outdated/empty
@@ -230,6 +242,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       completeOnboarding,
       addScan,
       deleteScan,
+      deleteItem,
       clearScans,
       toggleWatchlist,
       setFrequency,
@@ -254,6 +267,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       completeOnboarding,
       addScan,
       deleteScan,
+      deleteItem,
       clearScans,
       toggleWatchlist,
       setFrequency,

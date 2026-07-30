@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { ArrowDownUp, ArrowRight, ChevronDown, ChevronRight, Search, Star, Store, Trash2, X } from "lucide-react-native";
 import { memo, useCallback, useMemo, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeInDown, SlideInUp } from "react-native-reanimated";
 import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,7 +15,7 @@ import { FlashPrice } from "@/components/FlashPrice";
 
 export default function Watchlist() {
   const insets = useSafeAreaInsets();
-  const { scans, watchlist, toggleWatchlist } = useApp();
+  const { scans, watchlist, toggleWatchlist, deleteItem } = useApp();
   const [search, setSearch] = useState<string>("");
   const [sortMode, setSortMode] = useState<SortMode>("savings");
   const [sortOpen, setSortOpen] = useState<boolean>(false);
@@ -187,6 +187,23 @@ export default function Watchlist() {
                 index={i}
                 isPinned={watchlist.includes(item.key)}
                 onTogglePin={toggleWatchlist}
+                onDelete={(key, name) => {
+                  Alert.alert(
+                    `Remove ${name}?`,
+                    `This will permanently remove ${name} and all its price history from your tracked items. This cannot be undone.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Remove",
+                        style: "destructive",
+                        onPress: () => {
+                          if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          deleteItem(key);
+                        },
+                      },
+                    ],
+                  );
+                }}
                 onOpen={(key) => {
                   if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   router.push(`/item/${key}`);
@@ -238,12 +255,14 @@ const WatchlistRow = memo(function WatchlistRow({
   index,
   isPinned,
   onTogglePin,
+  onDelete,
   onOpen,
 }: {
   item: { key: string; name: string; cheapestPrice?: number; cheapestStore?: string; currentPrice: number; currentDate: string };
   index: number;
   isPinned: boolean;
   onTogglePin: (key: string) => void;
+  onDelete: (key: string, name: string) => void;
   onOpen: (key: string) => void;
 }) {
   const savings = item.currentPrice - (item.cheapestPrice ?? item.currentPrice);
@@ -263,8 +282,8 @@ const WatchlistRow = memo(function WatchlistRow({
 
   const handleSwipeOpen = useCallback(() => {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onTogglePin(item.key);
-  }, [item.key, onTogglePin]);
+    onDelete(item.key, item.name);
+  }, [item.key, item.name, onDelete]);
 
   const handlePress = useCallback(() => {
     onOpen(item.key);

@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, MapPin, Receipt, Scale, Settings, Shuffle, TrendingDown, TrendingUp, Trash2, X, Zap } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -384,7 +384,7 @@ export default function Dashboard() {
   );
 }
 
-function RecentEvidenceModal({
+const RecentEvidenceModal = memo(function RecentEvidenceModal({
   visible,
   onClose,
   items,
@@ -612,9 +612,9 @@ function RecentEvidenceModal({
       </View>
     </Modal>
   );
-}
+});
 
-function Header() {
+const Header = memo(function Header() {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -637,7 +637,7 @@ function Header() {
       </Pressable>
     </View>
   );
-}
+});
 
 function EmptyState() {
   const insets = useSafeAreaInsets();

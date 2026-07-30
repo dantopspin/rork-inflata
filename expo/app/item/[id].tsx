@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingDown, TrendingUp } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingDown, TrendingUp, Trash2 } from "lucide-react-native";
 import { memo, useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, SlideInUp } from "react-native-reanimated";
@@ -59,7 +59,7 @@ function findAlternatives(current: ItemStat, allStats: ItemStat[]): ItemStat[] {
 export default function ItemDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { hydrated, scans, frequency, subscribed, watchlist, toggleWatchlist } = useApp();
+  const { hydrated, scans, frequency, subscribed, watchlist, toggleWatchlist, deleteItem } = useApp();
 
   const allStats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
 
@@ -562,6 +562,40 @@ export default function ItemDetail() {
               ))
             )}
           </View>
+
+          {/* Clear All — wipes every recorded price for this item with confirmation */}
+          {stat.history.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Alert.alert(
+                  "Clear all price history?",
+                  `This will permanently remove all ${stat.history.length} recorded ${stat.history.length === 1 ? "price" : "prices"} for ${stat.name} from every scan. This cannot be undone.`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Clear All",
+                      style: "destructive",
+                      onPress: () => {
+                        deleteItem(id);
+                        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        router.replace("/(tabs)");
+                      },
+                    },
+                  ],
+                );
+              }}
+              style={({ pressed }) => [
+                styles.clearAllBtn,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Clear all price history for ${stat.name}`}
+            >
+              <Trash2 size={12} color={Colors.destructive} strokeWidth={2.5} />
+              <Text style={styles.clearAllBtnText}>CLEAR ALL HISTORY</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {/* Share text summary — clean, copy-pasteable price findings for any messaging app */}
@@ -881,6 +915,25 @@ const styles = StyleSheet.create({
     color: Colors.mutedForeground,
     paddingVertical: 16,
     textAlign: "center",
+  },
+  /* Clear All history button — destructive, outlined, sits below the price list */
+  clearAllBtn: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(230,53,53,0.25)",
+    backgroundColor: "rgba(230,53,53,0.05)",
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+  },
+  clearAllBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: Colors.destructive,
   },
 
   /* SHOP HERE NEXT button */

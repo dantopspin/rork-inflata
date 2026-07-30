@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { AlertTriangle, Check, Image, Loader2, Minus, Trash2, TrendingDown, TrendingUp, X } from "lucide-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -68,7 +68,7 @@ export default function ScanScreen() {
   const hardGate = !subscribed && realCount + 1 > FREE_HARD_GATE_AT;
 
   // Prior price averages for rip-off guardrail (per itemKey)
-  const priorAvgPrice = (() => {
+  const priorAvgPrice = useMemo(() => {
     const m = new Map<string, { total: number; count: number }>();
     // Skip baseline estimates so SPIKE badges compare real store prices
     // to real history, not to the user's own 90-day-old onboarding guesses.
@@ -84,10 +84,10 @@ export default function ScanScreen() {
     const avg = new Map<string, number>();
     for (const [k, v] of m) avg.set(k, v.total / v.count);
     return avg;
-  })();
+  }, [scans]);
 
   // Best (cheapest) store per itemKey across all past scans
-  const bestStoreMap = (() => {
+  const bestStoreMap = useMemo(() => {
     const m = new Map<string, { price: number; store: string }>();
     // Skip baseline estimates so the "Cross-Store Price Check" card only
     // names real stores the user has actually visited.
@@ -101,7 +101,7 @@ export default function ScanScreen() {
       }
     }
     return m;
-  })();
+  }, [scans]);
 
   const pickFromGallery = async () => {
     if (hardGate) { setPaywall(true); return; }
@@ -282,14 +282,14 @@ export default function ScanScreen() {
     }
   };
 
-  const toggle = (id: string) =>
+  const toggle = useCallback((id: string) =>
     setSelected((p) => {
       const n = new Set(p);
       if (n.has(id)) n.delete(id);
       else n.add(id);
       return n;
-    });
-  const deleteSelected = () => {
+    }), []);
+  const deleteSelected = useCallback(() => {
     if (selected.size === 0) return;
     Alert.alert(
       `Remove ${selected.size} ${selected.size === 1 ? "item" : "items"}?`,
@@ -303,8 +303,8 @@ export default function ScanScreen() {
         } },
       ],
     );
-  };
-  const deleteOne = (id: string) => {
+  }, [selected]);
+  const deleteOne = useCallback((id: string) => {
     Alert.alert(
       "Remove this item?",
       "It will be removed from this trip. You can re-scan the receipt if needed.",
@@ -317,7 +317,7 @@ export default function ScanScreen() {
         } },
       ],
     );
-  };
+  }, []);
 
   return (
     <View style={styles.screen}>
@@ -559,7 +559,7 @@ function ReviewView({
   }, []);
 
   // Cross-Store Price Check: compute total potential savings vs cheapest store
-  const crossStoreSavings = (() => {
+  const crossStoreSavings = useMemo(() => {
     let totalSaved = 0;
     const storeSavings = new Map<string, number>();
     for (const it of items) {
@@ -579,10 +579,10 @@ function ReviewView({
     }
     const hasSavings = totalSaved > 0 && items.some((it) => bestStoreMap.has(it.itemKey));
     return { totalSaved, topStore, topStoreSaved, hasSavings };
-  })();
+  }, [items, bestStoreMap]);
 
   // First-scan National Average Comparison
-  const nationalComparison = (() => {
+  const nationalComparison = useMemo(() => {
     if (!isFirstScan) return null;
     const matches: { name: string; scanned: number; avg: number; over: boolean }[] = [];
     for (const it of items) {
@@ -597,7 +597,7 @@ function ReviewView({
     if (!matches.length) return null;
     const totalOver = matches.filter((m) => m.over).reduce((s, m) => s + (m.scanned - m.avg), 0);
     return { matches, totalOver };
-  })();
+  }, [items, isFirstScan]);
 
   return (
     <Animated.View entering={SlideInUp.springify().stiffness(300).damping(20)} style={styles.reviewSheet}>
@@ -953,7 +953,7 @@ function InflationDiscovery({
   items: Editable[];
   onContinue: () => void;
 }) {
-  const matches = items
+  const matches = useMemo(() => items
     .map((it) => {
       const staple = STAPLES.find(
         (s) => s.id === it.itemKey || s.name.toLowerCase() === it.name.toLowerCase(),
@@ -965,10 +965,10 @@ function InflationDiscovery({
       if (normalized === null) return null; // quantity unknown — skip
       return { name: it.name, scanned: normalized, avg: staple.avgPrice, unit: staple.unit };
     })
-    .filter((m): m is NonNullable<typeof m> => !!m);
+    .filter((m): m is NonNullable<typeof m> => !!m), [items]);
 
-  const overspent = matches.filter((m) => m.scanned > m.avg);
-  const totalOverspend = overspent.reduce((sum, m) => sum + (m.scanned - m.avg), 0);
+  const overspent = useMemo(() => matches.filter((m) => m.scanned > m.avg), [matches]);
+  const totalOverspend = useMemo(() => overspent.reduce((sum, m) => sum + (m.scanned - m.avg), 0), [overspent]);
 
   return (
     <Animated.View entering={SlideInUp.springify().stiffness(300).damping(20)} style={styles.reviewSheet}>
