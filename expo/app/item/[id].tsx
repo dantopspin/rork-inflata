@@ -1,10 +1,10 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { Alert, Platform, Share } from "react-native";
-import { AlertTriangle, ArrowLeft, ArrowRight, Lock, MapPin, Ruler, Share2, Shuffle, Star, TrendingUp } from "lucide-react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { FadeIn, SlideInUp } from "react-native-reanimated";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { PaywallSheet } from "@/components/PaywallSheet";
@@ -66,6 +66,8 @@ export default function ItemDetail() {
   }, [scans, frequency, id]);
 
   const [paywall, setPaywall] = useState<boolean>(false);
+  const [storeFilter, setStoreFilter] = useState<string>("ALL");
+  const [storeFilterOpen, setStoreFilterOpen] = useState<boolean>(false);
   const cardRef = useRef<RNView>(null);
   const hapticFired = useRef<boolean>(false);
 
@@ -100,6 +102,22 @@ export default function ItemDetail() {
   );
 
   // Unit price change percentage (first real → last)
+  // Unique stores from this item's price history — for the retailer filter.
+  const uniqueStores = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of stat?.history ?? []) set.add(h.store);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [stat]);
+
+  // Filtered price history based on the selected retailer.
+  const filteredHistory = useMemo(() => {
+    if (!stat) return [];
+    const list = storeFilter === "ALL"
+      ? [...stat.history]
+      : stat.history.filter((h) => h.store === storeFilter);
+    return list.reverse();
+  }, [stat, storeFilter]);
+
   const unitPriceChange = useMemo(() => {
     if (unitPriceEntries.length < 2) return null;
     // Anchor to the first REAL unit entry so a synthetic baseline estimate
@@ -441,17 +459,50 @@ export default function ItemDetail() {
         ) : null}
 
         <View style={{ marginTop: 32 }}>
-          <Text style={styles.cardKicker}>ALL RECORDED PRICES</Text>
-          <View style={{ marginTop: 8 }}>
-            {[...stat.history].reverse().map((h, i) => (
-              <View key={i} style={styles.histRow}>
-                <Text style={styles.histPrice}>{fmtUSD(h.price)}</Text>
-                <Text style={styles.histMeta}>
-                  {fmtDate(h.date).toUpperCase()}
-                  {h.fromBaseline ? " • ESTIMATED BASELINE" : ""}
+          <View style={styles.histHeader}>
+            <Text style={styles.cardKicker}>ALL RECORDED PRICES</Text>
+            {uniqueStores.length > 1 ? (
+              <Pressable
+                onPress={() => {
+                  if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setStoreFilterOpen(true);
+                }}
+                style={({ pressed }) => [
+                  styles.storeFilterBtn,
+                  pressed && { opacity: 0.6 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter by retailer, currently ${storeFilter === "ALL" ? "all stores" : storeFilter}`}
+              >
+                <Store size={11} color={Colors.accent} strokeWidth={2} />
+                <Text style={styles.storeFilterText}>
+                  {storeFilter === "ALL" ? "ALL STORES" : storeFilter.toUpperCase()}
                 </Text>
-              </View>
-            ))}
+                <ChevronDown size={11} color={Colors.mutedForeground} strokeWidth={2.5} />
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={{ marginTop: 8 }}>
+            {filteredHistory.length === 0 ? (
+              <Text style={styles.histEmpty}>
+                No prices recorded at {storeFilter} yet.
+              </Text>
+            ) : (
+              filteredHistory.map((h, i) => (
+                <View key={i} style={styles.histRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.histPrice}>{fmtUSD(h.price)}</Text>
+                    <Text style={styles.histMeta}>
+                      {fmtDate(h.date).toUpperCase()}
+                      {h.fromBaseline ? " • ESTIMATED BASELINE" : ""}
+                    </Text>
+                  </View>
+                  {uniqueStores.length > 1 && storeFilter === "ALL" ? (
+                    <Text style={styles.histStore}>{h.store}</Text>
+                  ) : null}
+                </View>
+              ))
+            )}
           </View>
         </View>
 
@@ -497,7 +548,92 @@ export default function ItemDetail() {
       </ScrollView>
 
       <PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Share unlocks with paid" />
+
+      {/* ── Retailer filter modal for price history ── */}
+      <StoreFilterModal
+        visible={storeFilterOpen}
+        current={storeFilter}
+        stores={uniqueStores}
+        onSelect={(s) => {
+          setStoreFilter(s);
+          setStoreFilterOpen(false);
+          if (Platform.OS !== "web") Haptics.selectionAsync();
+        }}
+        onClose={() => setStoreFilterOpen(false)}
+      />
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Store Filter Modal
+// ─────────────────────────────────────────────
+
+function StoreFilterModal({
+  visible,
+  current,
+  stores,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  current: string;
+  stores: string[];
+  onSelect: (s: string) => void;
+  onClose: () => void;
+}) {
+  const options = ["ALL", ...stores];
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View entering={FadeIn.duration(180)} style={filterStyles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
+      <View style={filterStyles.anchor} pointerEvents="box-none">
+        <Animated.View
+          entering={SlideInUp.springify().dampingRatio(0.7).stiffness(280)}
+          style={filterStyles.sheet}
+        >
+          <View style={filterStyles.handle} />
+          <View style={filterStyles.header}>
+            <Text style={filterStyles.title}>Filter by retailer</Text>
+            <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+              <Text style={filterStyles.closeBtn}>×</Text>
+            </Pressable>
+          </View>
+          <Text style={filterStyles.subtitle}>
+            Show price trends for a specific store or all stores.
+          </Text>
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            <View style={filterStyles.options}>
+              {options.map((opt) => {
+    const selected = current === opt;
+                return (
+                  <Pressable
+                    key={opt}
+                    onPress={() => onSelect(opt)}
+                    style={({ pressed }) => [
+                      filterStyles.option,
+                      selected && filterStyles.optionSelected,
+                      pressed && { transform: [{ scale: 0.99 }] },
+                    ]}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                      <Store size={16} color={selected ? Colors.accent : Colors.mutedForeground} strokeWidth={2} />
+                      <Text style={[filterStyles.optionLabel, selected && { color: Colors.accent }]}>
+                        {opt === "ALL" ? "All stores" : opt}
+                      </Text>
+                    </View>
+                    {selected ? (
+                      <Text style={filterStyles.checkText}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -591,6 +727,40 @@ const styles = StyleSheet.create({
   },
   histPrice: { fontFamily: Fonts.semibold, fontSize: 14, color: Colors.foreground, fontVariant: ["tabular-nums"] },
   histMeta: { fontFamily: Fonts.mono, fontSize: 9.5, letterSpacing: 0.5, color: Colors.mutedForeground },
+  histStore: {
+    fontFamily: Fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 0.5,
+    color: Colors.accent,
+    marginLeft: 8,
+  },
+  histHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  storeFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  storeFilterText: {
+    fontFamily: Fonts.bold,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    color: Colors.accent,
+  },
+  histEmpty: {
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+    paddingVertical: 16,
+    textAlign: "center",
+  },
 
   /* SHOP HERE NEXT button */
   shopHereBtn: {
@@ -733,4 +903,78 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   lockBtnText: { fontFamily: Fonts.bold, fontSize: 13, letterSpacing: 0.5, color: Colors.foreground },
+});
+
+const filterStyles = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.overlay },
+  anchor: { flex: 1, justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+  handle: {
+    alignSelf: "center",
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.borderStrong,
+    marginBottom: 16,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  title: {
+    fontFamily: Fonts.extrabold,
+    fontSize: 20,
+    letterSpacing: -0.5,
+    color: Colors.foreground,
+  },
+  closeBtn: {
+    fontSize: 28,
+    color: Colors.mutedForeground,
+    fontFamily: Fonts.regular,
+    lineHeight: 28,
+  },
+  subtitle: {
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  options: { gap: 10 },
+  option: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: 16,
+  },
+  optionSelected: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
+  optionLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 15,
+    letterSpacing: -0.3,
+    color: Colors.foreground,
+  },
+  checkText: {
+    fontFamily: Fonts.bold,
+    fontSize: 18,
+    color: Colors.accent,
+  },
 });

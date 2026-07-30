@@ -1,20 +1,23 @@
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { ArrowDownUp, ArrowRight, ChevronRight, Search, Star, Store, X } from "lucide-react-native";
+import { ArrowDownUp, ArrowRight, ChevronDown, ChevronRight, Search, Star, Store, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeIn, FadeInDown, SlideInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors, Fonts, Radius } from "@/constants/theme";
 import { fmtUSD } from "@/lib/format";
 import { aggregateItems } from "@/lib/inflation";
 import { useApp } from "@/providers/AppProvider";
+import { FlashPrice } from "@/components/FlashPrice";
 
 export default function Watchlist() {
   const insets = useSafeAreaInsets();
   const { scans, watchlist, toggleWatchlist } = useApp();
   const [search, setSearch] = useState<string>("");
+  const [sortMode, setSortMode] = useState<SortMode>("savings");
+  const [sortOpen, setSortOpen] = useState<boolean>(false);
 
   const bestPrices = useMemo(() => {
     const stats = aggregateItems(scans);
@@ -27,9 +30,31 @@ export default function Watchlist() {
       });
   }, [scans]);
 
+  // Sorted list based on the selected sort mode. Watchlist-pinned items
+  // always stay at the top unless the user is searching.
+  const sorted = useMemo(() => {
+    let list = [...bestPrices];
+    switch (sortMode) {
+      case "lowest":
+        list.sort((a, b) => (a.cheapestPrice ?? a.currentPrice) - (b.cheapestPrice ?? b.currentPrice));
+        break;
+      case "highest":
+        list.sort((a, b) => (b.cheapestPrice ?? b.currentPrice) - (a.cheapestPrice ?? a.currentPrice));
+        break;
+      case "recent":
+        list.sort((a, b) => b.currentDate.localeCompare(a.currentDate));
+        break;
+      case "savings":
+      default:
+        // default savings sort is already applied in bestPrices
+        break;
+    }
+    return list;
+  }, [bestPrices, sortMode]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let list = bestPrices;
+    let list = sorted;
     // Pin watchlist items to the top when not searching
     if (!q && watchlist.length > 0) {
       const pinned = list.filter((s) => watchlist.includes(s.key));
@@ -42,7 +67,7 @@ export default function Watchlist() {
         s.name.toLowerCase().includes(q) ||
         (s.cheapestStore ?? "").toLowerCase().includes(q),
     );
-  }, [bestPrices, search, watchlist]);
+  }, [sorted, search, watchlist]);
 
   const uniqueStoreCount = useMemo(() => {
     const stores = new Set(scans.filter((s) => s.source === "scan").map((s) => s.store));
@@ -74,22 +99,42 @@ export default function Watchlist() {
           Where each item is cheapest across all stores you've visited.
         </Text>
 
-        {/* Search filter */}
-        <View style={styles.searchWrap}>
-          <Search size={14} color={Colors.mutedForeground} strokeWidth={2} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Filter by item or store…"
-            placeholderTextColor={Colors.mutedForeground}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.searchInput}
-          />
-          {search.length > 0 ? (
-            <Pressable onPress={() => setSearch("")} hitSlop={8} accessibilityLabel="Clear search">
-              <X size={14} color={Colors.mutedForeground} strokeWidth={2} />
+        {/* Search + Sort controls */}
+        <View style={styles.controlsRow}>
+          <View style={[styles.searchWrap, { flex: 1 }]}>
+            <Search size={14} color={Colors.mutedForeground} strokeWidth={2} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Filter by item or store…"
+              placeholderTextColor={Colors.mutedForeground}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              style={styles.searchInput}
+            />
+            {search.length > 0 ? (
+              <Pressable onPress={() => setSearch("")} hitSlop={8} accessibilityLabel="Clear search">
+                <X size={14} color={Colors.mutedForeground} strokeWidth={2} />
+              </Pressable>
+            ) : null}
+          </View>
+          {bestPrices.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSortOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.sortBtn,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Sort items, currently ${SORT_LABELS[sortMode]}`}
+            >
+              <ArrowDownUp size={13} color={Colors.mutedForeground} strokeWidth={2} />
+              <Text style={styles.sortBtnText}>{SORT_LABELS[sortMode]}</Text>
+              <ChevronDown size={11} color={Colors.mutedForeground} strokeWidth={2.5} />
             </Pressable>
           ) : null}
         </View>
@@ -186,9 +231,10 @@ export default function Watchlist() {
                     </View>
 
                     <View style={{ alignItems: "flex-end" }}>
-                      <Text style={styles.cheapestPrice}>
-                        {fmtUSD(item.cheapestPrice ?? item.currentPrice)}
-                      </Text>
+                      <FlashPrice
+                        price={item.cheapestPrice ?? item.currentPrice}
+                        style={styles.cheapestPrice}
+                      />
                       {savings > 0 ? (
                         <View style={styles.savingsBadge}>
                           <Text style={styles.savingsText}>
@@ -214,7 +260,101 @@ export default function Watchlist() {
           </View>
         )}
       </ScrollView>
+
+      <SortModal
+        visible={sortOpen}
+        current={sortMode}
+        onSelect={(m) => {
+          setSortMode(m);
+          setSortOpen(false);
+          if (Platform.OS !== "web") Haptics.selectionAsync();
+        }}
+        onClose={() => setSortOpen(false)}
+      />
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Sort mode types & labels
+// ─────────────────────────────────────────────
+
+type SortMode = "savings" | "lowest" | "highest" | "recent";
+
+const SORT_LABELS: Record<SortMode, string> = {
+  savings: "Best savings",
+  lowest: "Lowest price",
+  highest: "Highest price",
+  recent: "Date added",
+};
+
+const SORT_OPTIONS: { id: SortMode; label: string; sub: string }[] = [
+  { id: "savings", label: "Best savings", sub: "Biggest potential savings first" },
+  { id: "lowest", label: "Lowest price", sub: "Cheapest items first" },
+  { id: "highest", label: "Highest price", sub: "Most expensive items first" },
+  { id: "recent", label: "Date added", sub: "Recently scanned first" },
+];
+
+function SortModal({
+  visible,
+  current,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  current: SortMode;
+  onSelect: (m: SortMode) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View entering={FadeIn.duration(180)} style={sortStyles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
+      <View style={sortStyles.anchor} pointerEvents="box-none">
+        <Animated.View
+          entering={SlideInUp.springify().dampingRatio(0.7).stiffness(280)}
+          style={sortStyles.sheet}
+        >
+          <View style={sortStyles.handle} />
+          <View style={sortStyles.header}>
+            <Text style={sortStyles.title}>Sort items</Text>
+            <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+              <X size={20} color={Colors.mutedForeground} />
+            </Pressable>
+          </View>
+          <Text style={sortStyles.subtitle}>
+            Choose how your tracked products are ordered.
+          </Text>
+          <View style={sortStyles.options}>
+            {SORT_OPTIONS.map((opt) => {
+              const selected = current === opt.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  onPress={() => onSelect(opt.id)}
+                  style={({ pressed }) => [
+                    sortStyles.option,
+                    selected && sortStyles.optionSelected,
+                    pressed && { transform: [{ scale: 0.99 }] },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={sortStyles.optionLabel}>{opt.label}</Text>
+                    <Text style={sortStyles.optionSub}>{opt.sub}</Text>
+                  </View>
+                  <View style={[sortStyles.radio, selected && sortStyles.radioOn]}>
+                    {selected ? (
+                      <Text style={sortStyles.radioCheck}>✓</Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -245,7 +385,6 @@ const styles = StyleSheet.create({
 
   /* Search filter */
   searchWrap: {
-    marginTop: 20,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -255,6 +394,29 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === "ios" ? 12 : 8,
+  },
+  controlsRow: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sortBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
+  },
+  sortBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+    color: Colors.foreground,
   },
   searchInput: {
     flex: 1,
@@ -371,6 +533,93 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     fontSize: 13,
     letterSpacing: 0.5,
+    color: Colors.accentForeground,
+  },
+});
+
+const sortStyles = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.overlay },
+  anchor: { flex: 1, justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+  handle: {
+    alignSelf: "center",
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.borderStrong,
+    marginBottom: 16,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  title: {
+    fontFamily: Fonts.extrabold,
+    fontSize: 20,
+    letterSpacing: -0.5,
+    color: Colors.foreground,
+  },
+  subtitle: {
+    fontFamily: Fonts.regular,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  options: { gap: 10 },
+  option: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: 16,
+  },
+  optionSelected: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentSoft,
+  },
+  optionLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 15,
+    letterSpacing: -0.3,
+    color: Colors.foreground,
+  },
+  optionSub: {
+    marginTop: 2,
+    fontSize: 12,
+    color: Colors.mutedForeground,
+    fontFamily: Fonts.regular,
+  },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioOn: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accent,
+  },
+  radioCheck: {
+    fontFamily: Fonts.bold,
+    fontSize: 14,
     color: Colors.accentForeground,
   },
 });

@@ -1,8 +1,8 @@
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, MapPin, Receipt, Scale, Settings, Shuffle, TrendingDown, TrendingUp, X, Zap } from "lucide-react-native";
+import { AlertTriangle, ArrowRight, ChevronRight, CircleDollarSign, Hash, MapPin, Receipt, Scale, Settings, Shuffle, TrendingDown, TrendingUp, Trash2, X, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, FadeIn, SlideInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -28,7 +28,7 @@ import { useApp } from "@/providers/AppProvider";
 
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
-  const { hydrated, scans, frequency } = useApp();
+  const { hydrated, scans, frequency, deleteScan, clearScans } = useApp();
 
   const realCount = realScanCount(scans);
   const stats = useMemo(() => withOverspend(aggregateItems(scans), frequency), [scans, frequency]);
@@ -371,7 +371,15 @@ export default function Dashboard() {
         </Animated.View>
       </ScrollView>
       </ErrorBoundary>
-      <RecentEvidenceModal visible={evidenceOpen} onClose={() => setEvidenceOpen(false)} items={recentItems} spikeItem={showPriceAlert ? spikeTarget : undefined} />
+      <RecentEvidenceModal
+        visible={evidenceOpen}
+        onClose={() => setEvidenceOpen(false)}
+        items={recentItems}
+        spikeItem={showPriceAlert ? spikeTarget : undefined}
+        scans={scans}
+        deleteScan={deleteScan}
+        clearScans={clearScans}
+      />
     </View>
   );
 }
@@ -381,13 +389,25 @@ function RecentEvidenceModal({
   onClose,
   items,
   spikeItem,
+  scans,
+  deleteScan,
+  clearScans,
 }: {
   visible: boolean;
   onClose: () => void;
   items: { name: string; price: number; store: string; scanDate: string; itemKey: string; rowKey?: string }[];
   spikeItem?: import("@/types").ItemStat;
+  scans: import("@/types").Scan[];
+  deleteScan: (id: string) => void;
+  clearScans: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const realScans = useMemo(
+    () => [...scans].filter((s) => s.source === "scan").sort((a, b) => b.date.localeCompare(a.date)),
+    [scans],
+  );
 
   const spikePair = useMemo(() => {
     if (!spikeItem || spikeItem.history.length < 2) return null;
@@ -466,7 +486,7 @@ function RecentEvidenceModal({
           ) : items.length === 0 ? (
             <Text style={modalStyles.empty}>Scan a receipt to see your purchases.</Text>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
               {items.map((item, i) => {
                 const RowContent = (
                   <View style={[modalStyles.row, i === items.length - 1 && { borderBottomWidth: 0 }]}>
@@ -490,6 +510,104 @@ function RecentEvidenceModal({
               })}
             </ScrollView>
           )}
+
+          {/* ── Scan session logs with Clear History ── */}
+          {!spikePair && items.length > 0 ? (
+            <View style={{ marginTop: 16 }}>
+              <View style={modalStyles.logHeader}>
+                <Text style={modalStyles.logTitle}>SCAN HISTORY</Text>
+                {confirmClear ? (
+                  <View style={modalStyles.clearConfirm}>
+                    <Text style={modalStyles.clearConfirmText}>Clear all scan history?</Text>
+                    <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
+                      <Pressable
+                        onPress={() => {
+                          clearScans();
+                          setConfirmClear(false);
+                          onClose();
+                        }}
+                        style={modalStyles.clearConfirmBtn}
+                      >
+                        <Text style={modalStyles.clearConfirmBtnText}>CLEAR</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setConfirmClear(false)}
+                        style={modalStyles.clearCancelBtn}
+                      >
+                        <Text style={modalStyles.clearCancelBtnText}>CANCEL</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : realScans.length > 0 ? (
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setConfirmClear(true);
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear all scan history"
+                    style={({ pressed }) => [
+                      modalStyles.clearHistoryBtn,
+                      pressed && { opacity: 0.6 },
+                    ]}
+                  >
+                    <Trash2 size={11} color={Colors.destructive} strokeWidth={2.5} />
+                    <Text style={modalStyles.clearHistoryText}>CLEAR HISTORY</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {!confirmClear && realScans.length > 0 ? (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  style={{ maxHeight: 200, marginTop: 4 }}
+                >
+                  {realScans.map((s, i) => {
+                    const itemCount = s.items.length;
+                    const total = s.items.reduce((a, it) => a + it.price, 0);
+                    return (
+                      <View
+                        key={s.id}
+                        style={[
+                          modalStyles.logRow,
+                          i === realScans.length - 1 && { borderBottomWidth: 0 },
+                        ]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={modalStyles.logStore}>{s.store}</Text>
+                          <Text style={modalStyles.logMeta}>
+                            {new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} • {itemCount} {itemCount === 1 ? "item" : "items"}
+                          </Text>
+                        </View>
+                        <Text style={modalStyles.logTotal}>{fmtUSD(total)}</Text>
+                        <Pressable
+                          onPress={() => {
+                            if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            const dateStr = new Date(s.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                            const label = itemCount === 1 ? "item" : "items";
+                            Alert.alert(
+                              "Remove this scan?",
+                              "This will delete the " + itemCount + " " + label + " from " + s.store + " on " + dateStr + ".",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                { text: "Remove", style: "destructive", onPress: () => deleteScan(s.id) },
+                              ],
+                            );
+                          }}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={"Delete scan from " + s.store}
+                        >
+                          <Trash2 size={14} color={Colors.mutedForeground} />
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+            </View>
+          ) : null}
         </Animated.View>
       </View>
     </Modal>
@@ -894,4 +1012,95 @@ const modalStyles = StyleSheet.create({
   vsUnit: { marginTop: 4, fontFamily: Fonts.mono, fontSize: 10, letterSpacing: 0.3, color: Colors.mutedForeground },
   vsArrow: { flex: 0, justifyContent: "center", alignItems: "center", paddingHorizontal: 2, minWidth: 56 },
   vsPct: { marginTop: 4, fontFamily: Fonts.bold, fontSize: 12, color: Colors.accent },
+
+  /* ========== SCAN HISTORY LOG ========== */
+  logHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingTop: 14,
+  },
+  logTitle: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: Colors.mutedForeground,
+  },
+  clearHistoryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(230,53,53,0.08)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  clearHistoryText: {
+    fontFamily: Fonts.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.5,
+    color: Colors.destructive,
+  },
+  clearConfirm: {
+    alignItems: "flex-end",
+  },
+  clearConfirmText: {
+    fontFamily: Fonts.regular,
+    fontSize: 12,
+    color: Colors.mutedForeground,
+  },
+  clearConfirmBtn: {
+    backgroundColor: Colors.destructive,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  clearConfirmBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: Colors.destructiveForeground,
+  },
+  clearCancelBtn: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  clearCancelBtnText: {
+    fontFamily: Fonts.bold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    color: Colors.foreground,
+  },
+  logRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  logStore: {
+    fontFamily: Fonts.semibold,
+    fontSize: 13,
+    color: Colors.foreground,
+  },
+  logMeta: {
+    marginTop: 1,
+    fontFamily: Fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 0.3,
+    color: Colors.mutedForeground,
+  },
+  logTotal: {
+    fontFamily: Fonts.bold,
+    fontSize: 14,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
 });

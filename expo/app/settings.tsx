@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Lock,
   RotateCcw,
+  Share2,
   Trash2,
   X,
 } from "lucide-react-native";
@@ -20,6 +21,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -295,6 +297,24 @@ export default function Settings() {
 
         {/* ── ABOUT ── */}
         <Section title="ABOUT">
+          <Row
+            label="Share Inflata"
+            hint="Invite friends to track grocery prices"
+            icon={Share2}
+            accent
+            onPress={async () => {
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              try {
+                await Share.share({
+                  message: `I'm tracking grocery inflation with Inflata — see exactly which items spiked and by how much. Download it on the App Store: https://apps.apple.com/app/inflata`,
+                  title: "Track grocery prices with Inflata",
+                });
+              } catch {
+                // user cancelled — no-op
+              }
+            }}
+            chevron
+          />
           <Row label={`About ${APP_NAME}`} onPress={() => router.push("/legal/about")} chevron />
           <Row label="Privacy Policy" onPress={() => router.push("/legal/privacy")} chevron />
           <Row label="Terms of Service" onPress={() => router.push("/legal/terms")} chevron />

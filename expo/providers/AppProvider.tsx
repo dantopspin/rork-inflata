@@ -144,6 +144,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setScans((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  // Clear all scan sessions while keeping onboarding, frequency, and
+  // watchlist intact — used by the "Clear History" button in the scan
+  // logs (Recent Evidence) modal so users can remove outdated/empty
+  // scan sessions with one tap.
+  const clearScans = useCallback(() => {
+    setScans([]);
+  }, []);
+
   const setFrequency = useCallback((f: Frequency) => setFrequencyState(f), []);
 
   const setNotifications = useCallback((v: boolean) => setNotificationsEnabled(v), []);
@@ -222,6 +230,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       completeOnboarding,
       addScan,
       deleteScan,
+      clearScans,
       toggleWatchlist,
       setFrequency,
       setNotifications,
@@ -245,6 +254,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       completeOnboarding,
       addScan,
       deleteScan,
+      clearScans,
       toggleWatchlist,
       setFrequency,
       setNotifications,
