@@ -28,6 +28,21 @@ const STORAGE_KEY = "inflata:state:v1";
 
 const INACTIVE_ENT: Entitlement = { active: false, plan: null, expiresAt: null };
 
+/**
+ * Determine whether a scan contains at least one item with usable price data.
+ * Scans with zero items or only items whose price is missing/invalid are
+ * considered empty and are pruned on app load to keep the database clean.
+ */
+function scanHasPriceData(scan: Scan): boolean {
+  if (!scan.items || scan.items.length === 0) return false;
+  return scan.items.some((it) => {
+    if (!Number.isFinite(it.price) || it.price < 0) return false;
+    // Regular items must have a positive price; promo/discount may be 0.
+    if (it.price === 0 && it.type !== "promo" && it.type !== "discount") return false;
+    return true;
+  });
+}
+
 export const [AppProvider, useApp] = createContextHook(() => {
   const [hydrated, setHydrated] = useState<boolean>(false);
   const [hasOnboarded, setHasOnboarded] = useState<boolean>(false);
@@ -60,7 +75,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
           const parsed = JSON.parse(raw) as Partial<PersistShape>;
           setHasOnboarded(parsed.hasOnboarded ?? false);
           setFrequencyState(parsed.frequency ?? null);
-          setScans(Array.isArray(parsed.scans) ? parsed.scans : []);
+          // Auto-prune scan entries that contain no usable price data so the
+          // database stays clean on every app load (corrupted/empty/aborted scans).
+          const loadedScans = Array.isArray(parsed.scans) ? parsed.scans : [];
+          const cleanScans = loadedScans.filter(scanHasPriceData);
+          if (cleanScans.length !== loadedScans.length) {
+            console.log(
+              `[AppProvider] auto-pruned ${loadedScans.length - cleanScans.length} scan(s) with no price data`,
+            );
+          }
+          setScans(cleanScans);
           setNotificationsEnabled(parsed.notificationsEnabled ?? false);
           setFirstLaunchAt(parsed.firstLaunchAt ?? new Date().toISOString());
           setPostOnboardingPaywallShown(parsed.postOnboardingPaywallShown ?? false);
