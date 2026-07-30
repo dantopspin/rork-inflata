@@ -1,13 +1,14 @@
 import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingUp } from "lucide-react-native";
+import { AlertTriangle, ArrowLeft, ArrowRight, ChevronDown, Lock, MapPin, Ruler, Share2, Shuffle, Star, Store, TrendingDown, TrendingUp } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, SlideInUp } from "react-native-reanimated";
 
 import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import { PaywallSheet } from "@/components/PaywallSheet";
+import { PriceChart } from "@/components/PriceChart";
 import { ItemSpikeCard } from "@/components/ShareCard";
 import { Sparkline } from "@/components/Sparkline";
 import { captureAndShare } from "@/lib/share";
@@ -248,21 +249,23 @@ export default function ItemDetail() {
         <View style={styles.card}>
           <Text style={styles.cardKicker}>PRICE HISTORY</Text>
           <View style={{ marginTop: 12 }}>
-            <View>
-              <Sparkline prices={stat.history.map((h) => h.price)} height={96} strokeWidth={2.5} />
-              {/* Biggest Jump vertical marker */}
-              {biggestJumpIndex >= 0 && stat.history.length > 1 ? (
-                <View
-                  style={[
-                    styles.jumpMarker,
-                    { left: `${(biggestJumpIndex / (stat.history.length - 1)) * 100}%` },
-                  ]}
-                >
-                  <View style={styles.jumpMarkerLine} />
-                  <View style={styles.jumpMarkerDot} />
-                </View>
-              ) : null}
-            </View>
+            <PriceChart
+              data={stat.history.map((h) => ({ date: h.date, price: h.price, fromBaseline: h.fromBaseline }))}
+              height={160}
+              stroke={stat.pctChange > 0 ? Colors.accent : stat.pctChange < 0 ? Colors.success : Colors.accent}
+            />
+            {/* Biggest Jump vertical marker */}
+            {biggestJumpIndex >= 0 && stat.history.length > 1 ? (
+              <View
+                style={[
+                  styles.jumpMarker,
+                  { left: `${(biggestJumpIndex / (stat.history.length - 1)) * 100}%` },
+                ]}
+              >
+                <View style={styles.jumpMarkerLine} />
+                <View style={styles.jumpMarkerDot} />
+              </View>
+            ) : null}
           </View>
           <View style={styles.firstLatest}>
             <View>
@@ -459,6 +462,21 @@ export default function ItemDetail() {
         ) : null}
 
         <View style={{ marginTop: 32 }}>
+          {/* Lowest price summary header — absolute cheapest across all stores */}
+          {stat.cheapestPrice != null && stat.cheapestStore ? (
+            <View style={styles.lowestHeader}>
+              <View style={styles.lowestIconWrap}>
+                <TrendingDown size={14} color={Colors.success} strokeWidth={2.5} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.lowestKicker}>LOWEST PRICE FOUND</Text>
+                <Text style={styles.lowestValue}>
+                  {fmtUSD(stat.cheapestPrice)}{" "}
+                  <Text style={styles.lowestStore}>at {stat.cheapestStore}</Text>
+                </Text>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.histHeader}>
             <Text style={styles.cardKicker}>ALL RECORDED PRICES</Text>
             {uniqueStores.length > 1 ? (
@@ -738,6 +756,47 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  /* Lowest price summary header */
+  lowestHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: Colors.success,
+    backgroundColor: Colors.successSoft,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+  lowestIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(16,185,129,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lowestKicker: {
+    fontFamily: Fonts.mono,
+    fontSize: 9.5,
+    letterSpacing: 1,
+    color: Colors.success,
+  },
+  lowestValue: {
+    marginTop: 3,
+    fontFamily: Fonts.extrabold,
+    fontSize: 20,
+    letterSpacing: -0.5,
+    color: Colors.foreground,
+    fontVariant: ["tabular-nums"],
+  },
+  lowestStore: {
+    fontFamily: Fonts.bold,
+    fontSize: 13,
+    letterSpacing: -0.2,
+    color: Colors.mutedForeground,
   },
   storeFilterBtn: {
     flexDirection: "row",

@@ -1,9 +1,10 @@
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { ArrowDownUp, ArrowRight, ChevronDown, ChevronRight, Search, Star, Store, X } from "lucide-react-native";
+import { ArrowDownUp, ArrowRight, ChevronDown, ChevronRight, Search, Star, Store, Trash2, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeInDown, SlideInUp } from "react-native-reanimated";
+import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors, Fonts, Radius } from "@/constants/theme";
@@ -188,6 +189,19 @@ export default function Watchlist() {
                   key={item.key}
                   entering={FadeInDown.duration(350).delay(i * 60)}
                 >
+                  <Swipeable
+                    renderRightActions={() => (
+                      <View style={styles.deleteAction}>
+                        <Trash2 size={20} color={Colors.destructiveForeground} strokeWidth={2.2} />
+                      </View>
+                    )}
+                    overshootRight={false}
+                    rightThreshold={60}
+                    onSwipeableOpen={() => {
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      toggleWatchlist(item.key);
+                    }}
+                  >
                   <Pressable
                     onPress={() => {
                       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -254,6 +268,7 @@ export default function Watchlist() {
                       />
                     </View>
                   </Pressable>
+                  </Swipeable>
                 </Animated.View>
               );
             })}
@@ -461,6 +476,15 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   rowPinned: { borderColor: Colors.amber, borderWidth: 1.5 },
+  /* Swipe-to-delete action panel */
+  deleteAction: {
+    backgroundColor: Colors.destructive,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 72,
+    marginLeft: 10,
+  },
   starBtn: { marginRight: 10, padding: 4 },
   itemName: {
     fontFamily: Fonts.bold,
